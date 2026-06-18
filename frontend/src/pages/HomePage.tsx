@@ -1,6 +1,7 @@
 import { useState } from 'react'
 import { motion, AnimatePresence } from 'framer-motion'
-import { Shield, Zap, Globe, ArrowRight, ShieldCheck } from 'lucide-react'
+import { Shield, Zap, Globe, ArrowRight, ShieldCheck, HardDrive } from 'lucide-react'
+import { useQuery } from '@tanstack/react-query'
 import { UploadZone } from '@/components/upload/UploadZone'
 import { UploadOptions } from '@/components/upload/UploadOptions'
 import { UploadProgress } from '@/components/upload/UploadProgress'
@@ -11,6 +12,8 @@ import { MatrixRain } from '@/components/effects/MatrixRain'
 import { LockAnimation } from '@/components/effects/LockAnimation'
 import { Toggle } from '@/components/ui/Toggle'
 import { uploadTransfer, type UploadOptions as UOpts } from '@/api/transfers'
+import { getDiskStats } from '@/api/settings'
+import { useAuthStore } from '@/store/authStore'
 import toast from 'react-hot-toast'
 
 type Phase = 'idle' | 'uploading' | 'success'
@@ -31,6 +34,14 @@ const features = [
 ]
 
 export function HomePage() {
+  const { user } = useAuthStore()
+  const { data: diskStats } = useQuery({
+    queryKey: ['disk-stats'],
+    queryFn: getDiskStats,
+    enabled: !!user,
+    staleTime: 30_000,
+  })
+
   const [files, setFiles] = useState<File[]>([])
   const [options, setOptions] = useState(defaultOptions)
   const [phase, setPhase] = useState<Phase>('idle')
@@ -209,6 +220,27 @@ export function HomePage() {
             </Card>
           ))}
         </motion.div>
+
+        {/* Server disk usage — only for logged-in users */}
+        {diskStats && (
+          <motion.div
+            initial={{ opacity: 0 }}
+            animate={{ opacity: 1 }}
+            transition={{ delay: 0.3 }}
+            className="mt-4 flex items-center gap-3 px-1"
+          >
+            <HardDrive size={13} className="text-text-muted flex-shrink-0" />
+            <div className="flex-1 h-1 bg-border rounded-full overflow-hidden">
+              <div
+                className={`h-full rounded-full transition-[width] duration-500 ${
+                  diskStats.pct >= 90 ? 'bg-red-500' : diskStats.pct >= 70 ? 'bg-amber-500' : 'bg-primary'
+                }`}
+                style={{ width: `${diskStats.pct}%` }}
+              />
+            </div>
+            <span className="text-xs text-text-muted tabular-nums">{diskStats.pct}%</span>
+          </motion.div>
+        )}
       </div>
     </div>
   )
