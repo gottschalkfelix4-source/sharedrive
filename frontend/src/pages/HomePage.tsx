@@ -7,6 +7,7 @@ import { UploadProgress } from '@/components/upload/UploadProgress'
 import { SuccessScreen } from '@/components/upload/SuccessScreen'
 import { Button } from '@/components/ui/Button'
 import { Card } from '@/components/ui/Card'
+import { MatrixRain } from '@/components/effects/MatrixRain'
 import { uploadTransfer, type UploadOptions as UOpts } from '@/api/transfers'
 import toast from 'react-hot-toast'
 
@@ -75,6 +76,8 @@ export function HomePage() {
 
   return (
     <div className="min-h-screen">
+      <MatrixRain />
+
       {/* Hero gradient */}
       <div className="absolute inset-0 overflow-hidden pointer-events-none">
         <div className="absolute top-0 left-1/2 -translate-x-1/2 w-[800px] h-[400px] bg-gradient-radial from-primary/15 to-transparent rounded-full blur-3xl" />
