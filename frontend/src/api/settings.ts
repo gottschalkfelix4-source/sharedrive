@@ -31,3 +31,8 @@ export async function uploadAsset(type: 'logo' | 'favicon', file: File): Promise
 export async function deleteAsset(type: 'logo' | 'favicon'): Promise<void> {
   await api.delete(`/assets/${type}`)
 }
+
+export async function getDiskStats(): Promise<{ total: number; used: number; free: number; pct: number }> {
+  const res = await api.get('/settings/disk-stats')
+  return res.data
+}

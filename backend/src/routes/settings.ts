@@ -1,6 +1,7 @@
 import { Router } from 'express'
+import fs from 'fs'
 import { prisma } from '../lib/prisma'
-import { requireAdmin } from '../middleware/auth'
+import { requireAdmin, requireAuth } from '../middleware/auth'
 import { sendTestEmail } from '../services/email'
 
 const router = Router()
@@ -112,6 +113,19 @@ router.get('/legal', async (req, res, next) => {
       privacyPolicy: settings['legal.privacyPolicy'] || '',
       imprint: settings['legal.imprint'] || '',
     })
+  } catch (err) {
+    next(err)
+  }
+})
+
+router.get('/disk-stats', requireAuth, (req, res, next) => {
+  try {
+    const stats = fs.statfsSync('/')
+    const total = stats.blocks * stats.bsize
+    const free = stats.bfree * stats.bsize
+    const used = total - free
+    const pct = Math.round((used / total) * 100)
+    res.json({ total, used, free, pct })
   } catch (err) {
     next(err)
   }
