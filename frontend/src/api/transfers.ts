@@ -14,8 +14,34 @@ export interface UploadOptions {
 // Files are split into CHUNK_SIZE slices and uploaded in parallel batches.
 // Uses MinIO multipart API on the backend for full streaming + parallelism.
 
-const CHUNK_SIZE = 8 * 1024 * 1024   // 8 MB — above MinIO's 5 MB minimum part size
-const CONCURRENCY = 4                 // parallel chunk requests per upload
+const CHUNK_SIZE  = 8 * 1024 * 1024  // 8 MB — above MinIO's 5 MB minimum part size
+const CONCURRENCY = 6                 // sliding-window slots
+
+// Sliding-window scheduler: keeps exactly `limit` requests in-flight at all
+// times. As soon as one slot frees up the next task starts immediately —
+// no gap between batches like Promise.all-in-batches would cause.
+async function withConcurrency(
+  count: number,
+  fn: (index: number) => Promise<void>,
+): Promise<void> {
+  const pending = new Set<Promise<void>>()
+  let i = 0
+
+  const launch = () => {
+    while (pending.size < CONCURRENCY && i < count) {
+      const idx = i++
+      const p: Promise<void> = fn(idx).finally(() => {
+        pending.delete(p)
+        launch()
+      })
+      pending.add(p)
+    }
+  }
+
+  launch()
+  // Wait until all in-flight tasks finish
+  while (pending.size > 0) await Promise.race(pending)
+}
 
 export async function uploadTransfer(
   files: File[],
@@ -25,23 +51,23 @@ export async function uploadTransfer(
   const totalBytes = files.reduce((s, f) => s + f.size, 0)
   let uploadedBytes = 0
 
-  const tick = (added: number) => {
-    uploadedBytes += added
+  const tick = (bytes: number) => {
+    uploadedBytes += bytes
     if (!options.onProgress || totalBytes === 0) return
-    const pct     = Math.min(99, Math.round((uploadedBytes / totalBytes) * 100))
+    const pct    = Math.min(99, Math.round((uploadedBytes / totalBytes) * 100))
     const elapsed = (Date.now() - startTime) / 1000 || 0.001
     const speed   = uploadedBytes / elapsed
     const remSec  = speed > 0 ? Math.round((totalBytes - uploadedBytes) / speed) : 0
     options.onProgress(pct, formatBytes(speed) + '/s', remSec + 's')
   }
 
-  // ── 1. Init: create session + MinIO multipart uploads ──────────────────────
+  // ── 1. Init ─────────────────────────────────────────────────────────────────
   const initRes = await api.post('/transfers/chunked/init', {
-    title:        options.title        || undefined,
-    message:      options.message      || undefined,
-    password:     options.password     || undefined,
+    title:         options.title        || undefined,
+    message:       options.message      || undefined,
+    password:      options.password     || undefined,
     expiresInDays: options.expiresInDays,
-    notifyEmail:  options.notifyEmail  || undefined,
+    notifyEmail:   options.notifyEmail  || undefined,
     files: files.map((f) => ({
       name:     f.name,
       size:     f.size,
@@ -51,45 +77,36 @@ export async function uploadTransfer(
 
   const { shortId, fileTokens } = initRes.data as { shortId: string; fileTokens: string[] }
 
-  // ── 2. Upload chunks (files one by one, chunks in parallel per file) ────────
+  // ── 2. Stream chunks with sliding-window concurrency ────────────────────────
   try {
     for (let fi = 0; fi < files.length; fi++) {
       const file      = files[fi]
       const fileToken = fileTokens[fi]
       const numChunks = Math.max(1, Math.ceil(file.size / CHUNK_SIZE))
 
-      for (let base = 0; base < numChunks; base += CONCURRENCY) {
-        const batch = Array.from(
-          { length: Math.min(CONCURRENCY, numChunks - base) },
-          (_, j) => base + j,
-        )
-        await Promise.all(
-          batch.map(async (idx) => {
-            const start  = idx * CHUNK_SIZE
-            const end    = Math.min(start + CHUNK_SIZE, file.size)
-            const buffer = await file.slice(start, end).arrayBuffer()
+      await withConcurrency(numChunks, async (idx) => {
+        const start = idx * CHUNK_SIZE
+        const end   = Math.min(start + CHUNK_SIZE, file.size)
 
-            await api.put(`/transfers/chunked/${shortId}/part`, buffer, {
-              headers: {
-                'Content-Type':  'application/octet-stream',
-                'x-file-token':  fileToken,
-                'x-part-number': String(idx + 1),  // parts are 1-indexed
-              },
-              timeout: 0,
-            })
+        // Send Blob directly — no ArrayBuffer copy, Axios streams it as-is
+        await api.put(`/transfers/chunked/${shortId}/part`, file.slice(start, end), {
+          headers: {
+            'Content-Type':  'application/octet-stream',
+            'x-file-token':  fileToken,
+            'x-part-number': String(idx + 1),
+          },
+          timeout: 0,
+        })
 
-            tick(end - start)
-          }),
-        )
-      }
+        tick(end - start)
+      })
     }
   } catch (err) {
-    // Clean up incomplete MinIO multipart uploads
     api.delete(`/transfers/chunked/${shortId}`).catch(() => {})
     throw err
   }
 
-  // ── 3. Finalize: complete multipart uploads + write DB record ───────────────
+  // ── 3. Finalize ──────────────────────────────────────────────────────────────
   const finalRes = await api.post(`/transfers/chunked/${shortId}/finalize`)
   options.onProgress?.(100, '—', '0s')
   return finalRes.data
