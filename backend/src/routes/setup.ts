@@ -2,6 +2,7 @@ import { Router } from 'express'
 import bcrypt from 'bcryptjs'
 import { z } from 'zod'
 import fs from 'fs'
+import http from 'http'
 import { prisma } from '../lib/prisma'
 import { AppError } from '../middleware/errorHandler'
 
@@ -9,7 +10,6 @@ const ENV_PATH = '/app/.env'
 
 const router = Router()
 const CADDYFILE_PATH = '/app/Caddyfile'
-const CADDY_ADMIN = 'http://caddy:2019'
 
 async function adminExists(): Promise<boolean> {
   const count = await prisma.user.count({ where: { role: 'ADMIN' } })
@@ -18,7 +18,50 @@ async function adminExists(): Promise<boolean> {
 
 function buildCaddyfile(domain: string, acmeEmail?: string): string {
   const emailLine = acmeEmail ? `    email ${acmeEmail}\n` : ''
-  return `{\n    admin 0.0.0.0:2019\n${emailLine}}\n\n${domain} {\n    reverse_proxy nginx:80\n}\n`
+  return [
+    '{',
+    '    admin 0.0.0.0:2019 {',
+    '        origins localhost caddy:2019',
+    '    }',
+    emailLine ? emailLine.trimEnd() : '',
+    '}',
+    '',
+    `${domain} {`,
+    '    reverse_proxy nginx:80',
+    '}',
+    '',
+  ].filter((l, i, a) => !(l === '' && a[i - 1] === '')).join('\n')
+}
+
+// Calls the Caddy Admin API using Node's http module so headers are always sent as-is.
+function caddyLoad(caddyfile: string): Promise<void> {
+  return new Promise((resolve, reject) => {
+    const body = Buffer.from(caddyfile, 'utf8')
+    const req = http.request(
+      {
+        hostname: 'caddy',
+        port:     2019,
+        path:     '/load',
+        method:   'POST',
+        headers:  {
+          'Content-Type':   'text/caddyfile',
+          'Content-Length': body.length,
+          'Origin':         'http://caddy:2019',
+        },
+      },
+      (res) => {
+        let data = ''
+        res.on('data', (chunk: Buffer) => { data += chunk.toString() })
+        res.on('end', () => {
+          if (res.statusCode && res.statusCode < 300) resolve()
+          else reject(new AppError(`Caddy reload fehlgeschlagen: ${data}`, 502))
+        })
+      },
+    )
+    req.on('error', reject)
+    req.write(body)
+    req.end()
+  })
 }
 
 router.get('/status', async (_req, res, next) => {
@@ -93,18 +136,8 @@ router.post('/ssl', async (req, res, next) => {
     // Write updated Caddyfile (mounted as bind-mount, shared with Caddy container)
     fs.writeFileSync(CADDYFILE_PATH, caddyfile, 'utf8')
 
-    // Reload Caddy via Admin API (no restart needed).
-    // Origin header must be set — Caddy rejects requests without a recognised origin.
-    // Using 'http://localhost' always passes Caddy's default allowlist.
-    const reload = await fetch(`${CADDY_ADMIN}/load`, {
-      method:  'POST',
-      headers: { 'Content-Type': 'text/caddyfile', 'Origin': 'http://localhost' },
-      body:    caddyfile,
-    })
-    if (!reload.ok) {
-      const msg = await reload.text()
-      throw new AppError(`Caddy reload fehlgeschlagen: ${msg}`, 502)
-    }
+    // Reload Caddy via Admin API using Node's http module (fetch strips custom headers in some runtimes)
+    await caddyLoad(caddyfile)
 
     // Save base URL to settings so download links use https://
     await prisma.setting.upsert({

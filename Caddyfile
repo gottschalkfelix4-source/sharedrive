@@ -1,5 +1,7 @@
 {
-    admin 0.0.0.0:2019
+    admin 0.0.0.0:2019 {
+        origins localhost caddy:2019
+    }
     auto_https off
 }
 
