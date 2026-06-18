@@ -53,3 +53,44 @@ export async function getObjectStream(key: string): Promise<Readable> {
   const stream = await minioClient.getObject(config.minio.bucket, key)
   return stream as unknown as Readable
 }
+
+export async function initiateMultipartUpload(key: string, mimeType: string): Promise<string> {
+  return minioClient.initiateNewMultipartUpload(config.minio.bucket, key, {
+    'Content-Type': mimeType,
+  })
+}
+
+export async function uploadFilePart(
+  key: string,
+  uploadId: string,
+  partNumber: number,
+  data: Buffer,
+): Promise<{ etag: string; part: number }> {
+  return minioClient.uploadPart(
+    {
+      bucketName: config.minio.bucket,
+      objectName: key,
+      uploadID: uploadId,
+      partNumber,
+      headers: { 'content-length': String(data.length) },
+    },
+    data,
+  )
+}
+
+export async function completeFileParts(
+  key: string,
+  uploadId: string,
+  parts: { part: number; etag: string }[],
+): Promise<void> {
+  await minioClient.completeMultipartUpload(
+    config.minio.bucket,
+    key,
+    uploadId,
+    parts.slice().sort((a, b) => a.part - b.part),
+  )
+}
+
+export async function abortMultipartUpload(key: string, uploadId: string): Promise<void> {
+  await minioClient.abortMultipartUpload(config.minio.bucket, key, uploadId)
+}

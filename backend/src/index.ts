@@ -3,6 +3,7 @@ import helmet from 'helmet'
 import cors from 'cors'
 import cookieParser from 'cookie-parser'
 import { authRouter } from './routes/auth'
+import { chunkedUploadRouter } from './routes/chunkedUpload'
 import { transfersRouter } from './routes/transfers'
 import { downloadRouter } from './routes/download'
 import { adminRouter } from './routes/admin'
@@ -37,6 +38,7 @@ app.use(cookieParser())
 
 app.use('/api/setup', setupRouter)
 app.use('/api/auth', authRouter)
+app.use('/api/transfers/chunked', chunkedUploadRouter)
 app.use('/api/transfers', transfersRouter)
 app.use('/api/d', downloadRouter)
 app.use('/api/admin', adminRouter)
