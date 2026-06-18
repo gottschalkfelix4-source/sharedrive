@@ -93,10 +93,12 @@ router.post('/ssl', async (req, res, next) => {
     // Write updated Caddyfile (mounted as bind-mount, shared with Caddy container)
     fs.writeFileSync(CADDYFILE_PATH, caddyfile, 'utf8')
 
-    // Reload Caddy via Admin API (no restart needed)
+    // Reload Caddy via Admin API (no restart needed).
+    // Origin header must be set — Caddy rejects requests without a recognised origin.
+    // Using 'http://localhost' always passes Caddy's default allowlist.
     const reload = await fetch(`${CADDY_ADMIN}/load`, {
       method:  'POST',
-      headers: { 'Content-Type': 'text/caddyfile' },
+      headers: { 'Content-Type': 'text/caddyfile', 'Origin': 'http://localhost' },
       body:    caddyfile,
     })
     if (!reload.ok) {
