@@ -79,6 +79,7 @@ All application settings live in the **Admin panel → Settings** after first st
 
 | Variable | Description |
 |---|---|
+| `HTTP_PORT` | Host port the web interface listens on (default: `80`) |
 | `POSTGRES_USER` / `POSTGRES_PASSWORD` / `POSTGRES_DB` | Database credentials |
 | `DATABASE_URL` | Full Postgres connection string |
 | `MINIO_ROOT_USER` / `MINIO_ROOT_PASSWORD` | MinIO root credentials |
