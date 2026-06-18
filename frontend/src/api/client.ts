@@ -15,9 +15,14 @@ api.interceptors.response.use(
   (res) => res,
   (err) => {
     if (err.response?.status === 401) {
-      localStorage.removeItem('token')
-      if (!window.location.pathname.includes('/login')) {
-        window.location.href = '/login'
+      const path = window.location.pathname
+      // Don't redirect on download pages — they handle 401 (password prompt) themselves
+      const isDownloadPage = path.startsWith('/d/')
+      if (!isDownloadPage) {
+        localStorage.removeItem('token')
+        if (!path.includes('/login')) {
+          window.location.href = '/login'
+        }
       }
     }
     return Promise.reject(err)
