@@ -3,7 +3,7 @@ import bcrypt from 'bcryptjs'
 import { z } from 'zod'
 import fs from 'fs'
 import http from 'http'
-import { prisma } from '../lib/prisma'
+import { prisma, reconnectPrisma } from '../lib/prisma'
 import { AppError } from '../middleware/errorHandler'
 
 const ENV_PATH = '/app/.env'
@@ -104,11 +104,13 @@ router.post('/credentials', async (req, res, next) => {
     envContent = setEnvVar(envContent, 'JWT_SECRET',           jwtSecret)
     fs.writeFileSync(ENV_PATH, envContent, 'utf8')
 
-    // 2. Change postgres password live (existing connections stay valid)
+    // 2. Change postgres password live, then reconnect Prisma with the new URL
     const escapedPass = dbPassword.replace(/'/g, "''")
     await prisma.$executeRawUnsafe(
       `ALTER ROLE "${dbUser}" WITH PASSWORD '${escapedPass}'`
     )
+    const newDbUrl = `postgresql://${dbUser}:${dbPassword}@postgres:5432/${dbName}`
+    await reconnectPrisma(newDbUrl)
 
     // 3. Update in-process env so new tokens use new secret
     process.env.JWT_SECRET           = jwtSecret
