@@ -1,27 +1,59 @@
-#!/bin/bash
+#!/usr/bin/env bash
 # ShareDrive – Quick start script
+# Generates secure random credentials on first run, then starts the stack.
+set -euo pipefail
 
-set -e
+gen() {
+  local len=${1:-32}
+  if command -v openssl &>/dev/null; then
+    # openssl rand -hex N produces 2N hex chars; trim to len
+    openssl rand -hex "$len" | head -c "$len"
+  else
+    LC_ALL=C tr -dc 'A-Za-z0-9' < /dev/urandom | head -c "$len"
+  fi
+}
+
+echo "╔══════════════════════════════════╗"
+echo "║       ShareDrive Quick Start      ║"
+echo "╚══════════════════════════════════╝"
+echo ""
 
 if [ ! -f .env ]; then
-  echo "Creating .env from .env.example..."
+  echo "→ Generating .env with secure random credentials..."
+
+  DB_PASS=$(gen 32)
+  MINIO_PASS=$(gen 32)
+  JWT=$(gen 64)
+
   cp .env.example .env
-  echo ""
-  echo "⚠️  IMPORTANT: Edit .env and change the default passwords before deploying!"
-  echo "   Especially JWT_SECRET, POSTGRES_PASSWORD and MINIO_ROOT_PASSWORD."
-  echo ""
+
+  # Replace placeholder values (GNU sed on Linux, BSD sed on macOS)
+  if sed --version &>/dev/null 2>&1; then
+    # GNU sed
+    sed -i "s/change_me_db/$DB_PASS/g"                              .env
+    sed -i "s/change_me_minio/$MINIO_PASS/g"                        .env
+    sed -i "s/change-me-to-a-long-random-secret-string/$JWT/"       .env
+  else
+    # BSD sed (macOS)
+    sed -i '' "s/change_me_db/$DB_PASS/g"                           .env
+    sed -i '' "s/change_me_minio/$MINIO_PASS/g"                     .env
+    sed -i '' "s/change-me-to-a-long-random-secret-string/$JWT/"    .env
+  fi
+
+  echo "✓ Credentials generated — the setup wizard will show them."
+else
+  echo "→ .env exists, keeping existing credentials."
 fi
 
-echo "Starting ShareDrive..."
+echo ""
+echo "→ Starting services..."
 docker compose up --build -d
 
 echo ""
-echo "✅ ShareDrive is starting!"
+echo "✅ ShareDrive is running!"
 echo ""
-echo "   Web UI:        http://localhost"
-echo "   MinIO Console: http://localhost:9001"
+echo "   Open http://localhost to complete setup in the browser."
+echo "   The wizard guides you through credentials, domain, SSL, and admin account."
 echo ""
-echo "   → Open http://localhost to complete the first-time setup"
-echo "     and create your admin account."
+echo "   Logs: docker compose logs -f"
 echo ""
-echo "View logs: docker compose logs -f"

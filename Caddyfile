@@ -1,8 +1,8 @@
 {
-    # Let's Encrypt contact email (optional but recommended)
-    email {$ACME_EMAIL:}
+    admin 0.0.0.0:2019
+    auto_https off
 }
 
-{$DOMAIN} {
+:80 {
     reverse_proxy nginx:80
 }
