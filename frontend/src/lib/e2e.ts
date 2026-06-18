@@ -1,6 +1,9 @@
 // AES-256-GCM end-to-end encryption helpers.
 // Each chunk is independently encrypted: [12B IV | ciphertext | 16B auth tag]
 // The key is shared via the URL fragment (#key=<base64url>) — never sent to the server.
+//
+// All Uint8Array values are explicitly typed as Uint8Array<ArrayBuffer> to satisfy
+// TypeScript 5.3+'s stricter BufferSource checks on the Web Crypto API.
 
 const ALGO = 'AES-GCM'
 const IV_LEN = 12   // bytes — GCM standard nonce
@@ -15,7 +18,7 @@ export async function generateKey(): Promise<CryptoKey> {
 
 export async function exportKey(key: CryptoKey): Promise<string> {
   const raw = await crypto.subtle.exportKey('raw', key)
-  // base64url encoding (no padding)
+  // base64url (no padding)
   return btoa(String.fromCharCode(...new Uint8Array(raw)))
     .replace(/\+/g, '-').replace(/\//g, '_').replace(/=/g, '')
 }
@@ -23,12 +26,15 @@ export async function exportKey(key: CryptoKey): Promise<string> {
 export async function importKey(base64url: string): Promise<CryptoKey> {
   const b64 = base64url.replace(/-/g, '+').replace(/_/g, '/')
   const padded = b64 + '='.repeat((4 - (b64.length % 4)) % 4)
-  // new Uint8Array(Array.from(...)) gives an ArrayBuffer-backed view, satisfying subtle.importKey
-  const raw = new Uint8Array(Array.from(atob(padded), (c) => c.charCodeAt(0)))
+  const chars = atob(padded)
+  // new Uint8Array(length) produces Uint8Array<ArrayBuffer> — required by subtle.importKey
+  const raw = new Uint8Array(chars.length)
+  for (let i = 0; i < chars.length; i++) raw[i] = chars.charCodeAt(i)
   return crypto.subtle.importKey('raw', raw, { name: ALGO, length: 256 }, false, ['encrypt', 'decrypt'])
 }
 
-export async function encryptChunk(key: CryptoKey, plaintext: Uint8Array): Promise<Uint8Array> {
+export async function encryptChunk(key: CryptoKey, plaintext: Uint8Array<ArrayBuffer>): Promise<Uint8Array<ArrayBuffer>> {
+  // getRandomValues with Uint8Array<ArrayBuffer> returns Uint8Array<ArrayBuffer>
   const iv = crypto.getRandomValues(new Uint8Array(IV_LEN))
   const ciphertext = await crypto.subtle.encrypt({ name: ALGO, iv }, key, plaintext)
   const out = new Uint8Array(IV_LEN + ciphertext.byteLength)
@@ -37,7 +43,8 @@ export async function encryptChunk(key: CryptoKey, plaintext: Uint8Array): Promi
   return out
 }
 
-export async function decryptChunk(key: CryptoKey, encData: Uint8Array): Promise<Uint8Array> {
+export async function decryptChunk(key: CryptoKey, encData: Uint8Array<ArrayBuffer>): Promise<Uint8Array<ArrayBuffer>> {
+  // .slice() on Uint8Array<ArrayBuffer> returns Uint8Array<ArrayBuffer>
   const iv = encData.slice(0, IV_LEN)
   const ciphertext = encData.slice(IV_LEN)
   const plain = await crypto.subtle.decrypt({ name: ALGO, iv }, key, ciphertext)
@@ -51,21 +58,23 @@ export async function decryptToBlob(
   plaintextSize: number,
 ): Promise<Blob> {
   const numChunks = Math.ceil(plaintextSize / CHUNK_SIZE)
+  // new Uint8Array(ArrayBuffer) → Uint8Array<ArrayBuffer>
   const src = new Uint8Array(encryptedData)
-  const parts: Uint8Array[] = []
+  const parts: Uint8Array<ArrayBuffer>[] = []
   let offset = 0
 
   for (let i = 0; i < numChunks; i++) {
     const plainLen = i < numChunks - 1 ? CHUNK_SIZE : plaintextSize - (numChunks - 1) * CHUNK_SIZE
     const encLen = plainLen + ENC_OVERHEAD
+    // src.slice() → Uint8Array<ArrayBuffer>
     parts.push(await decryptChunk(key, src.slice(offset, offset + encLen)))
     offset += encLen
   }
 
-  return new Blob(parts as unknown as BlobPart[])
+  return new Blob(parts)
 }
 
-// Streaming decryption via File System Access API (for large files > a few hundred MB)
+// Streaming decryption via File System Access API (for large files)
 export async function decryptStream(
   encryptedStream: ReadableStream<Uint8Array>,
   key: CryptoKey,
@@ -76,6 +85,7 @@ export async function decryptStream(
   const writer = writable.getWriter()
   const reader = encryptedStream.getReader()
 
+  // buf is always backed by a fresh ArrayBuffer (new Uint8Array → Uint8Array<ArrayBuffer>)
   let buf = new Uint8Array(0)
 
   function append(data: Uint8Array) {
@@ -99,6 +109,7 @@ export async function decryptStream(
     }
     if (buf.length < needed) throw new Error('Encrypted stream ended unexpectedly')
 
+    // buf.slice() → Uint8Array<ArrayBuffer>
     const chunk = buf.slice(0, needed)
     buf = buf.slice(needed)
     await writer.write(await decryptChunk(key, chunk))
