@@ -26,6 +26,9 @@ export const DEFAULT_SETTINGS: Record<string, string> = {
   'appearance.primaryColor': '#6366f1',
   'appearance.logoUrl': '',
   'appearance.faviconUrl': '',
+  'privacy.logRetentionDays': '30',
+  'legal.privacyPolicy': '',
+  'legal.imprint': '',
 }
 
 export async function getSetting(key: string): Promise<string> {
@@ -94,6 +97,18 @@ router.get('/public', async (req, res, next) => {
       registrationEnabled: settings['security.registrationEnabled'] === 'true',
       maxFileSizeBytes: parseInt(settings['storage.maxFileSizeBytes']),
       maxTransferSizeBytes: parseInt(settings['storage.maxTransferSizeBytes']),
+    })
+  } catch (err) {
+    next(err)
+  }
+})
+
+router.get('/legal', async (req, res, next) => {
+  try {
+    const settings = await getSettings()
+    res.json({
+      privacyPolicy: settings['legal.privacyPolicy'] || '',
+      imprint: settings['legal.imprint'] || '',
     })
   } catch (err) {
     next(err)

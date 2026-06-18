@@ -1,5 +1,5 @@
 import { Link, useLocation, Outlet } from 'react-router-dom'
-import { Settings, HardDrive, Mail, Lock, Palette, ChevronRight } from 'lucide-react'
+import { Settings, HardDrive, Mail, Lock, Palette, ShieldCheck, ChevronRight } from 'lucide-react'
 import { cn } from '@/lib/utils'
 
 const settingsNav = [
@@ -8,6 +8,7 @@ const settingsNav = [
   { to: '/admin/settings/email', label: 'E-Mail', icon: <Mail size={16} />, desc: 'SMTP-Konfiguration' },
   { to: '/admin/settings/security', label: 'Sicherheit', icon: <Lock size={16} />, desc: 'Registrierung & Zugang' },
   { to: '/admin/settings/appearance', label: 'Erscheinungsbild', icon: <Palette size={16} />, desc: 'Farben & Branding' },
+  { to: '/admin/settings/privacy', label: 'Datenschutz', icon: <ShieldCheck size={16} />, desc: 'DSGVO, Impressum' },
 ]
 
 export function SettingsLayout() {

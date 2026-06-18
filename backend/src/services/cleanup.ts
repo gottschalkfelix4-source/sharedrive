@@ -2,6 +2,7 @@ import cron from 'node-cron'
 import { prisma } from '../lib/prisma'
 import { deleteObjects } from '../lib/minio'
 import { cleanOldLogs } from './logger'
+import { getSettings } from '../routes/settings'
 
 export function startCleanupService(): void {
   cron.schedule('0 * * * *', async () => {
@@ -35,10 +36,12 @@ export function startCleanupService(): void {
     }
   })
 
-  // Clean old logs daily at 03:00
+  // Clean old logs daily at 03:00 — retention configurable via admin settings
   cron.schedule('0 3 * * *', async () => {
     try {
-      await cleanOldLogs(30)
+      const settings = await getSettings()
+      const days = parseInt(settings['privacy.logRetentionDays'] || '30')
+      await cleanOldLogs(days)
     } catch (err) {
       console.error('Log cleanup error:', err)
     }

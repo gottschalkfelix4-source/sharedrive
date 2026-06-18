@@ -1,8 +1,11 @@
-import { Routes, Route, Navigate, useNavigate } from 'react-router-dom'
+import { Routes, Route, Navigate } from 'react-router-dom'
 import { useEffect, useState } from 'react'
 import { Navbar } from '@/components/layout/Navbar'
+import { Footer } from '@/components/layout/Footer'
 import { HomePage } from '@/pages/HomePage'
 import { DownloadPage } from '@/pages/DownloadPage'
+import { PrivacyPage } from '@/pages/PrivacyPage'
+import { ImprintPage } from '@/pages/ImprintPage'
 import { LoginPage } from '@/pages/auth/LoginPage'
 import { RegisterPage } from '@/pages/auth/RegisterPage'
 import { VerifyEmailPage } from '@/pages/auth/VerifyEmailPage'
@@ -19,6 +22,7 @@ import { StorageSettings } from '@/pages/admin/settings/StorageSettings'
 import { EmailSettings } from '@/pages/admin/settings/EmailSettings'
 import { SecuritySettings } from '@/pages/admin/settings/SecuritySettings'
 import { AppearanceSettings } from '@/pages/admin/settings/AppearanceSettings'
+import { PrivacySettings } from '@/pages/admin/settings/PrivacySettings'
 import { useAuthStore } from '@/store/authStore'
 import { getMe } from '@/api/auth'
 import { getSetupStatus } from '@/api/setup'
@@ -32,10 +36,11 @@ function RequireAuth({ children }: { children: React.ReactNode }) {
 
 function WithNavbar({ children }: { children: React.ReactNode }) {
   return (
-    <>
+    <div className="flex flex-col min-h-screen">
       <Navbar />
-      {children}
-    </>
+      <div className="flex-1">{children}</div>
+      <Footer />
+    </div>
   )
 }
 
@@ -116,12 +121,15 @@ export default function App() {
             <Route path="email" element={<EmailSettings />} />
             <Route path="security" element={<SecuritySettings />} />
             <Route path="appearance" element={<AppearanceSettings />} />
+            <Route path="privacy" element={<PrivacySettings />} />
           </Route>
         </Route>
 
         {/* Public routes with navbar */}
         <Route path="/" element={<WithNavbar><HomePage /></WithNavbar>} />
         <Route path="/d/:shortId" element={<WithNavbar><DownloadPage /></WithNavbar>} />
+        <Route path="/datenschutz" element={<WithNavbar><PrivacyPage /></WithNavbar>} />
+        <Route path="/impressum" element={<WithNavbar><ImprintPage /></WithNavbar>} />
         <Route path="/login" element={<WithNavbar><LoginPage /></WithNavbar>} />
         <Route path="/register" element={<WithNavbar><RegisterPage /></WithNavbar>} />
         <Route path="/verify-email" element={<WithNavbar><VerifyEmailPage /></WithNavbar>} />
