@@ -95,7 +95,7 @@ All application settings live in the **Admin panel → Settings** after first st
 | **Storage** | Max file size, max transfer size, retention days (anonymous / registered) |
 | **Email** | SMTP host/port/auth, SSL toggle, from address, test button |
 | **Security** | Open/closed registration, require email verification |
-| **Appearance** | Primary color (presets + custom picker), logo URL, favicon URL |
+| **Appearance** | Primary color (presets + custom picker), logo upload, favicon upload |
 
 ---
 

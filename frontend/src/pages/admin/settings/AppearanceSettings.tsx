@@ -1,9 +1,8 @@
-import { useState, useEffect } from 'react'
-import { useQuery, useMutation } from '@tanstack/react-query'
-import { Save, Palette } from 'lucide-react'
-import { getAllSettings, updateSettings } from '@/api/settings'
+import { useState, useEffect, useRef } from 'react'
+import { useQuery, useMutation, useQueryClient } from '@tanstack/react-query'
+import { Save, Palette, Upload, X, Image } from 'lucide-react'
+import { getAllSettings, updateSettings, uploadAsset, deleteAsset } from '@/api/settings'
 import { Button } from '@/components/ui/Button'
-import { Input } from '@/components/ui/Input'
 import { Spinner } from '@/components/ui/Spinner'
 import toast from 'react-hot-toast'
 
@@ -16,28 +15,163 @@ const presetColors = [
   { label: 'Amber', value: '#f59e0b' },
 ]
 
+function ImageUpload({
+  label,
+  hint,
+  value,
+  type,
+  onUploaded,
+  onDeleted,
+}: {
+  label: string
+  hint: string
+  value: string
+  type: 'logo' | 'favicon'
+  onUploaded: (url: string) => void
+  onDeleted: () => void
+}) {
+  const inputRef = useRef<HTMLInputElement>(null)
+  const [uploading, setUploading] = useState(false)
+  const [deleting, setDeleting] = useState(false)
+  const [dragOver, setDragOver] = useState(false)
+
+  const handleFile = async (file: File) => {
+    if (!file.type.startsWith('image/')) {
+      toast.error('Only image files are allowed')
+      return
+    }
+    if (file.size > 2 * 1024 * 1024) {
+      toast.error('File too large — max 2 MB')
+      return
+    }
+    setUploading(true)
+    try {
+      const url = await uploadAsset(type, file)
+      onUploaded(url)
+      toast.success(`${label} uploaded`)
+    } catch (err: any) {
+      toast.error(err?.response?.data?.error || 'Upload failed')
+    } finally {
+      setUploading(false)
+    }
+  }
+
+  const handleDelete = async () => {
+    setDeleting(true)
+    try {
+      await deleteAsset(type)
+      onDeleted()
+      toast.success(`${label} removed`)
+    } catch {
+      toast.error('Failed to remove')
+    } finally {
+      setDeleting(false)
+    }
+  }
+
+  return (
+    <div>
+      <label className="text-sm font-medium text-text-secondary block mb-2">{label}</label>
+      <p className="text-xs text-text-muted mb-3">{hint}</p>
+
+      <div className="flex items-start gap-4">
+        {/* Preview */}
+        <div className="w-20 h-20 rounded-xl border border-border bg-bg-elevated flex items-center justify-center flex-shrink-0 overflow-hidden">
+          {value ? (
+            <img
+              src={value}
+              alt={label}
+              className="w-full h-full object-contain p-2"
+              onError={(e) => { (e.target as HTMLImageElement).style.display = 'none' }}
+            />
+          ) : (
+            <Image size={24} className="text-text-muted" />
+          )}
+        </div>
+
+        {/* Drop zone */}
+        <div
+          className={`flex-1 border-2 border-dashed rounded-xl p-4 text-center transition-colors cursor-pointer ${
+            dragOver
+              ? 'border-primary bg-primary/5'
+              : 'border-border hover:border-border-strong hover:bg-white/[0.02]'
+          }`}
+          onClick={() => inputRef.current?.click()}
+          onDragOver={(e) => { e.preventDefault(); setDragOver(true) }}
+          onDragLeave={() => setDragOver(false)}
+          onDrop={(e) => {
+            e.preventDefault()
+            setDragOver(false)
+            const file = e.dataTransfer.files[0]
+            if (file) handleFile(file)
+          }}
+        >
+          {uploading ? (
+            <div className="flex items-center justify-center gap-2 py-1">
+              <Spinner size="sm" />
+              <span className="text-sm text-text-muted">Uploading…</span>
+            </div>
+          ) : (
+            <>
+              <Upload size={18} className="text-text-muted mx-auto mb-1" />
+              <p className="text-sm text-text-secondary">
+                {value ? 'Replace image' : 'Click or drag to upload'}
+              </p>
+              <p className="text-xs text-text-muted mt-0.5">PNG, JPG, SVG, ICO — max 2 MB</p>
+            </>
+          )}
+        </div>
+
+        {/* Remove button */}
+        {value && (
+          <Button
+            variant="danger"
+            size="sm"
+            icon={<X size={14} />}
+            loading={deleting}
+            onClick={handleDelete}
+            title={`Remove ${label}`}
+          />
+        )}
+      </div>
+
+      <input
+        ref={inputRef}
+        type="file"
+        accept="image/*"
+        className="hidden"
+        onChange={(e) => {
+          const file = e.target.files?.[0]
+          if (file) handleFile(file)
+          e.target.value = ''
+        }}
+      />
+    </div>
+  )
+}
+
 export function AppearanceSettings() {
+  const queryClient = useQueryClient()
   const { data: settings, isLoading } = useQuery({ queryKey: ['admin-settings'], queryFn: getAllSettings })
 
-  const [form, setForm] = useState({
-    'appearance.primaryColor': '#6366f1',
-    'appearance.logoUrl': '',
-    'appearance.faviconUrl': '',
-  })
+  const [color, setColor] = useState('#6366f1')
+  const [logoUrl, setLogoUrl] = useState('')
+  const [faviconUrl, setFaviconUrl] = useState('')
 
   useEffect(() => {
     if (settings) {
-      setForm({
-        'appearance.primaryColor': settings['appearance.primaryColor'] || '#6366f1',
-        'appearance.logoUrl': settings['appearance.logoUrl'] || '',
-        'appearance.faviconUrl': settings['appearance.faviconUrl'] || '',
-      })
+      setColor(settings['appearance.primaryColor'] || '#6366f1')
+      setLogoUrl(settings['appearance.logoUrl'] || '')
+      setFaviconUrl(settings['appearance.faviconUrl'] || '')
     }
   }, [settings])
 
   const mutation = useMutation({
-    mutationFn: updateSettings,
-    onSuccess: () => toast.success('Settings saved'),
+    mutationFn: () => updateSettings({ 'appearance.primaryColor': color }),
+    onSuccess: () => {
+      queryClient.invalidateQueries({ queryKey: ['admin-settings'] })
+      toast.success('Settings saved')
+    },
     onError: () => toast.error('Failed to save'),
   })
 
@@ -55,7 +189,8 @@ export function AppearanceSettings() {
         </div>
       </div>
 
-      <div className="space-y-6">
+      <div className="space-y-8">
+        {/* Color picker */}
         <div>
           <label className="text-sm font-medium text-text-secondary block mb-3">Primary Color</label>
           <div className="flex items-center gap-3 flex-wrap">
@@ -63,9 +198,9 @@ export function AppearanceSettings() {
               <button
                 key={c.value}
                 type="button"
-                onClick={() => setForm({ ...form, 'appearance.primaryColor': c.value })}
+                onClick={() => setColor(c.value)}
                 className={`w-9 h-9 rounded-xl transition-all duration-200 ${
-                  form['appearance.primaryColor'] === c.value
+                  color === c.value
                     ? 'ring-2 ring-white ring-offset-2 ring-offset-bg scale-110'
                     : 'hover:scale-105'
                 }`}
@@ -76,27 +211,26 @@ export function AppearanceSettings() {
             <div className="flex items-center gap-2">
               <input
                 type="color"
-                value={form['appearance.primaryColor']}
-                onChange={(e) => setForm({ ...form, 'appearance.primaryColor': e.target.value })}
+                value={color}
+                onChange={(e) => setColor(e.target.value)}
                 className="w-9 h-9 rounded-xl border border-border cursor-pointer bg-transparent"
               />
-              <span className="text-sm text-text-muted font-mono">{form['appearance.primaryColor']}</span>
+              <span className="text-sm text-text-muted font-mono">{color}</span>
             </div>
           </div>
 
-          {/* Preview */}
           <div className="mt-4 p-4 bg-bg-elevated rounded-xl border border-border">
             <p className="text-xs text-text-muted mb-2">Preview</p>
             <div className="flex gap-2">
               <button
                 className="px-4 py-2 rounded-xl text-sm text-white font-medium"
-                style={{ background: `linear-gradient(135deg, ${form['appearance.primaryColor']}, ${form['appearance.primaryColor']}cc)` }}
+                style={{ background: `linear-gradient(135deg, ${color}, ${color}cc)` }}
               >
                 Upload
               </button>
               <div
                 className="px-4 py-2 rounded-xl text-sm border"
-                style={{ borderColor: `${form['appearance.primaryColor']}50`, color: form['appearance.primaryColor'] }}
+                style={{ borderColor: `${color}50`, color }}
               >
                 Learn more
               </div>
@@ -104,26 +238,30 @@ export function AppearanceSettings() {
           </div>
         </div>
 
-        <Input
-          label="Logo URL (optional)"
-          placeholder="https://yourdomain.com/logo.png"
-          value={form['appearance.logoUrl']}
-          onChange={(e) => setForm({ ...form, 'appearance.logoUrl': e.target.value })}
-          hint="Replaces the default text logo in the navbar"
+        {/* Logo upload */}
+        <ImageUpload
+          label="Logo"
+          hint="Shown in the navbar. Replaces the text logo. Recommended: PNG or SVG, min 120 px tall."
+          value={logoUrl}
+          type="logo"
+          onUploaded={(url) => setLogoUrl(url)}
+          onDeleted={() => setLogoUrl('')}
         />
 
-        <Input
-          label="Favicon URL (optional)"
-          placeholder="https://yourdomain.com/favicon.ico"
-          value={form['appearance.faviconUrl']}
-          onChange={(e) => setForm({ ...form, 'appearance.faviconUrl': e.target.value })}
-          hint="Browser tab icon (16×16 or 32×32 px)"
+        {/* Favicon upload */}
+        <ImageUpload
+          label="Favicon"
+          hint="Browser tab icon. Recommended: ICO, PNG or SVG, 32×32 px."
+          value={faviconUrl}
+          type="favicon"
+          onUploaded={(url) => setFaviconUrl(url)}
+          onDeleted={() => setFaviconUrl('')}
         />
       </div>
 
       <div className="flex justify-end pt-2 border-t border-border">
-        <Button icon={<Save size={15} />} loading={mutation.isPending} onClick={() => mutation.mutate(form)}>
-          Save changes
+        <Button icon={<Save size={15} />} loading={mutation.isPending} onClick={() => mutation.mutate()}>
+          Save color
         </Button>
       </div>
     </div>

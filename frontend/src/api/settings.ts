@@ -18,3 +18,16 @@ export async function updateSettings(settings: Record<string, string>): Promise<
 export async function testEmail(to: string): Promise<void> {
   await api.post('/settings/test-email', { to })
 }
+
+export async function uploadAsset(type: 'logo' | 'favicon', file: File): Promise<string> {
+  const form = new FormData()
+  form.append('file', file)
+  const res = await api.post(`/assets/upload?type=${type}`, form, {
+    headers: { 'Content-Type': 'multipart/form-data' },
+  })
+  return res.data.url
+}
+
+export async function deleteAsset(type: 'logo' | 'favicon'): Promise<void> {
+  await api.delete(`/assets/${type}`)
+}
