@@ -23,7 +23,8 @@ export async function exportKey(key: CryptoKey): Promise<string> {
 export async function importKey(base64url: string): Promise<CryptoKey> {
   const b64 = base64url.replace(/-/g, '+').replace(/_/g, '/')
   const padded = b64 + '='.repeat((4 - (b64.length % 4)) % 4)
-  const raw = Uint8Array.from(atob(padded), (c) => c.charCodeAt(0))
+  // new Uint8Array(Array.from(...)) gives an ArrayBuffer-backed view, satisfying subtle.importKey
+  const raw = new Uint8Array(Array.from(atob(padded), (c) => c.charCodeAt(0)))
   return crypto.subtle.importKey('raw', raw, { name: ALGO, length: 256 }, false, ['encrypt', 'decrypt'])
 }
 
@@ -61,7 +62,7 @@ export async function decryptToBlob(
     offset += encLen
   }
 
-  return new Blob(parts)
+  return new Blob(parts as unknown as BlobPart[])
 }
 
 // Streaming decryption via File System Access API (for large files > a few hundred MB)
