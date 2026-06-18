@@ -56,6 +56,7 @@ export async function decryptToBlob(
   key: CryptoKey,
   encryptedData: ArrayBuffer,
   plaintextSize: number,
+  onProgress?: (pct: number) => void,
 ): Promise<Blob> {
   const numChunks = Math.ceil(plaintextSize / CHUNK_SIZE)
   // new Uint8Array(ArrayBuffer) → Uint8Array<ArrayBuffer>
@@ -69,6 +70,7 @@ export async function decryptToBlob(
     // src.slice() → Uint8Array<ArrayBuffer>
     parts.push(await decryptChunk(key, src.slice(offset, offset + encLen)))
     offset += encLen
+    onProgress?.(Math.round(((i + 1) / numChunks) * 100))
   }
 
   return new Blob(parts)
@@ -80,6 +82,7 @@ export async function decryptStream(
   key: CryptoKey,
   plaintextSize: number,
   writable: WritableStream<Uint8Array>,
+  onProgress?: (pct: number) => void,
 ): Promise<void> {
   const numChunks = Math.ceil(plaintextSize / CHUNK_SIZE)
   const writer = writable.getWriter()
@@ -113,6 +116,7 @@ export async function decryptStream(
     const chunk = buf.slice(0, needed)
     buf = buf.slice(needed)
     await writer.write(await decryptChunk(key, chunk))
+    onProgress?.(Math.round(((i + 1) / numChunks) * 100))
   }
 
   await writer.close()
