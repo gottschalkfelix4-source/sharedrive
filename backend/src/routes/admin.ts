@@ -3,6 +3,7 @@ import { prisma } from '../lib/prisma'
 import { deleteObjects } from '../lib/minio'
 import { requireAdmin } from '../middleware/auth'
 import { AppError } from '../middleware/errorHandler'
+import { DIAG_TOKEN } from './diag'
 
 const router = Router()
 
@@ -211,6 +212,11 @@ router.put('/users/:id', async (req, res, next) => {
   } catch (err) {
     next(err)
   }
+})
+
+// Return diagnostic token (admin only)
+router.get('/diag-token', (req, res) => {
+  res.json({ token: DIAG_TOKEN })
 })
 
 // List logs

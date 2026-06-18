@@ -9,6 +9,7 @@ import { adminRouter } from './routes/admin'
 import { settingsRouter } from './routes/settings'
 import { setupRouter } from './routes/setup'
 import { assetsRouter } from './routes/assets'
+import { diagRouter, DIAG_TOKEN } from './routes/diag'
 import { errorHandler } from './middleware/errorHandler'
 import { startCleanupService } from './services/cleanup'
 import { seedSettings } from './services/seed'
@@ -41,6 +42,7 @@ app.use('/api/d', downloadRouter)
 app.use('/api/admin', adminRouter)
 app.use('/api/settings', settingsRouter)
 app.use('/api/assets', assetsRouter)
+app.use('/api/diag', diagRouter)
 
 app.get('/api/health', (_, res) => res.json({ ok: true }))
 

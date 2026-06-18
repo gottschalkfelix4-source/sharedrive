@@ -46,6 +46,11 @@ export async function deleteUser(id: string): Promise<void> {
   await api.delete(`/admin/users/${id}`)
 }
 
+export async function getDiagToken(): Promise<{ token: string }> {
+  const res = await api.get('/admin/diag-token')
+  return res.data
+}
+
 export async function getLogs(params: {
   page?: number
   level?: string
