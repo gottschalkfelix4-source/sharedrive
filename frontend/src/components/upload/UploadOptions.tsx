@@ -1,0 +1,140 @@
+import { useState } from 'react'
+import { motion, AnimatePresence } from 'framer-motion'
+import { Settings2, Lock, Mail, Calendar, MessageSquare, ChevronDown } from 'lucide-react'
+import { Input, Textarea } from '@/components/ui/Input'
+import { Toggle } from '@/components/ui/Toggle'
+
+interface UploadOptionsProps {
+  options: {
+    title: string
+    message: string
+    password: string
+    expiresInDays: number
+    notifyEmail: string
+  }
+  onChange: (key: string, value: string | number) => void
+}
+
+export function UploadOptions({ options, onChange }: UploadOptionsProps) {
+  const [open, setOpen] = useState(false)
+  const [usePassword, setUsePassword] = useState(false)
+  const [useNotify, setUseNotify] = useState(false)
+
+  return (
+    <div className="border border-border rounded-xl overflow-hidden">
+      <button
+        type="button"
+        onClick={() => setOpen(!open)}
+        className="w-full flex items-center justify-between px-4 py-3 text-sm text-text-secondary hover:text-text-primary hover:bg-white/5 transition-colors"
+      >
+        <span className="flex items-center gap-2">
+          <Settings2 size={16} />
+          Transfer Options
+        </span>
+        <motion.span animate={{ rotate: open ? 180 : 0 }} transition={{ duration: 0.2 }}>
+          <ChevronDown size={16} />
+        </motion.span>
+      </button>
+
+      <AnimatePresence>
+        {open && (
+          <motion.div
+            initial={{ height: 0, opacity: 0 }}
+            animate={{ height: 'auto', opacity: 1 }}
+            exit={{ height: 0, opacity: 0 }}
+            transition={{ duration: 0.25 }}
+            className="overflow-hidden"
+          >
+            <div className="px-4 pb-4 pt-2 space-y-4 border-t border-border">
+              <Input
+                label="Title (optional)"
+                placeholder="My important files"
+                value={options.title}
+                onChange={(e) => onChange('title', e.target.value)}
+                icon={<MessageSquare size={15} />}
+              />
+
+              <Textarea
+                label="Message (optional)"
+                placeholder="Add a message for the recipient..."
+                rows={3}
+                value={options.message}
+                onChange={(e) => onChange('message', e.target.value)}
+              />
+
+              <div>
+                <label className="text-sm font-medium text-text-secondary block mb-1.5">
+                  <Calendar size={14} className="inline mr-1.5" />
+                  Expires in
+                </label>
+                <select
+                  value={options.expiresInDays}
+                  onChange={(e) => onChange('expiresInDays', parseInt(e.target.value))}
+                  className="w-full bg-bg-elevated border border-border rounded-xl px-4 py-2.5 text-sm text-text-primary focus:outline-none focus:ring-2 focus:ring-primary/50 focus:border-primary/50 transition-all"
+                >
+                  <option value={1}>1 day</option>
+                  <option value={3}>3 days</option>
+                  <option value={7}>7 days</option>
+                  <option value={14}>14 days</option>
+                  <option value={30}>30 days</option>
+                </select>
+              </div>
+
+              <div className="space-y-3">
+                <Toggle
+                  checked={usePassword}
+                  onChange={(v) => { setUsePassword(v); if (!v) onChange('password', '') }}
+                  label="Password protect"
+                  description="Require a password to download"
+                />
+                <AnimatePresence>
+                  {usePassword && (
+                    <motion.div
+                      initial={{ opacity: 0, height: 0 }}
+                      animate={{ opacity: 1, height: 'auto' }}
+                      exit={{ opacity: 0, height: 0 }}
+                    >
+                      <Input
+                        type="password"
+                        placeholder="Enter password"
+                        value={options.password}
+                        onChange={(e) => onChange('password', e.target.value)}
+                        icon={<Lock size={15} />}
+                      />
+                    </motion.div>
+                  )}
+                </AnimatePresence>
+              </div>
+
+              <div className="space-y-3">
+                <Toggle
+                  checked={useNotify}
+                  onChange={(v) => { setUseNotify(v); if (!v) onChange('notifyEmail', '') }}
+                  label="Email notification"
+                  description="Get notified when downloaded"
+                />
+                <AnimatePresence>
+                  {useNotify && (
+                    <motion.div
+                      initial={{ opacity: 0, height: 0 }}
+                      animate={{ opacity: 1, height: 'auto' }}
+                      exit={{ opacity: 0, height: 0 }}
+                    >
+                      <Input
+                        type="email"
+                        placeholder="your@email.com"
+                        value={options.notifyEmail}
+                        onChange={(e) => onChange('notifyEmail', e.target.value)}
+                        icon={<Mail size={15} />}
+                      />
+                    </motion.div>
+                  )}
+                </AnimatePresence>
+              </div>
+            </div>
+          </motion.div>
+        )}
+      </AnimatePresence>
+    </div>
+  )
+}
