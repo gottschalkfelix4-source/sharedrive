@@ -44,7 +44,7 @@ function NotFoundPage() {
     <div className="min-h-[60vh] flex items-center justify-center text-center">
       <div>
         <p className="text-6xl font-bold text-text-muted">404</p>
-        <p className="text-text-secondary mt-3">Page not found</p>
+        <p className="text-text-secondary mt-3">Seite nicht gefunden</p>
       </div>
     </div>
   )

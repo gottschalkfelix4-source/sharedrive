@@ -21,9 +21,9 @@ const defaultOptions = {
 }
 
 const features = [
-  { icon: <Zap size={20} />, title: 'Lightning fast', desc: 'Streamed directly to secure storage' },
-  { icon: <Shield size={20} />, title: 'Secure & private', desc: 'Optional password protection' },
-  { icon: <Globe size={20} />, title: 'Share anywhere', desc: 'Simple link, no account needed' },
+  { icon: <Zap size={20} />, title: 'Blitzschnell', desc: 'Direkt in sicheren Speicher gestreamt' },
+  { icon: <Shield size={20} />, title: 'Sicher & privat', desc: 'Optionaler Passwortschutz' },
+  { icon: <Globe size={20} />, title: 'Überall teilen', desc: 'Einfacher Link, kein Konto nötig' },
 ]
 
 export function HomePage() {
@@ -47,7 +47,7 @@ export function HomePage() {
 
   const handleUpload = async () => {
     if (files.length === 0) {
-      toast.error('Add at least one file')
+      toast.error('Mindestens eine Datei hinzufügen')
       return
     }
     setPhase('uploading')
@@ -59,7 +59,7 @@ export function HomePage() {
       setResult(res)
       setPhase('success')
     } catch (err: any) {
-      toast.error(err?.response?.data?.error || 'Upload failed')
+      toast.error(err?.response?.data?.error || 'Upload fehlgeschlagen')
       setPhase('idle')
     }
   }
@@ -89,13 +89,13 @@ export function HomePage() {
           className="text-center mb-10"
         >
           <h1 className="text-4xl sm:text-5xl font-extrabold text-text-primary tracking-tight">
-            Share files,{' '}
+            Dateien teilen,{' '}
             <span className="bg-gradient-primary bg-clip-text text-transparent">
-              effortlessly
+              mühelos
             </span>
           </h1>
           <p className="text-text-muted mt-4 text-lg">
-            Drop your files and get a shareable link in seconds. No signup required.
+            Dateien ablegen und in Sekunden einen teilbaren Link erhalten. Kein Konto erforderlich.
           </p>
         </motion.div>
 
@@ -135,7 +135,7 @@ export function HomePage() {
                       icon={<ArrowRight size={18} />}
                       onClick={handleUpload}
                     >
-                      Upload & get link
+                      Hochladen & Link erhalten
                     </Button>
                   </motion.div>
                 )}

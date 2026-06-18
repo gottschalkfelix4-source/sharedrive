@@ -30,7 +30,7 @@ export function Navbar() {
   }
 
   const links = [
-    ...(user ? [{ to: '/dashboard', label: 'My Transfers', icon: <LayoutDashboard size={16} /> }] : []),
+    ...(user ? [{ to: '/dashboard', label: 'Meine Transfers', icon: <LayoutDashboard size={16} /> }] : []),
     ...(user?.role === 'ADMIN' ? [{ to: '/admin', label: 'Admin', icon: <Shield size={16} /> }] : []),
   ]
 
@@ -72,16 +72,16 @@ export function Navbar() {
             <>
               <span className="text-sm text-text-muted">@{user.username}</span>
               <Button variant="ghost" size="sm" icon={<LogOut size={15} />} onClick={handleLogout}>
-                Logout
+                Abmelden
               </Button>
             </>
           ) : (
             <>
               <Button variant="ghost" size="sm" icon={<LogIn size={15} />} onClick={() => navigate('/login')}>
-                Login
+                Anmelden
               </Button>
               <Button size="sm" icon={<UserPlus size={15} />} onClick={() => navigate('/register')}>
-                Register
+                Registrieren
               </Button>
             </>
           )}
@@ -119,15 +119,15 @@ export function Navbar() {
               onClick={handleLogout}
               className="flex items-center gap-2 px-3 py-2 rounded-lg text-sm text-red-400 hover:bg-red-500/10"
             >
-              <LogOut size={15} /> Logout
+              <LogOut size={15} /> Abmelden
             </button>
           ) : (
             <>
               <Link to="/login" onClick={() => setMenuOpen(false)} className="flex items-center gap-2 px-3 py-2 rounded-lg text-sm text-text-secondary hover:bg-white/5">
-                <LogIn size={15} /> Login
+                <LogIn size={15} /> Anmelden
               </Link>
               <Link to="/register" onClick={() => setMenuOpen(false)} className="flex items-center gap-2 px-3 py-2 rounded-lg text-sm text-primary hover:bg-primary/10">
-                <UserPlus size={15} /> Register
+                <UserPlus size={15} /> Registrieren
               </Link>
             </>
           )}

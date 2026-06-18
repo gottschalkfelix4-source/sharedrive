@@ -8,10 +8,10 @@ import { cn } from '@/lib/utils'
 
 const navItems = [
   { to: '/admin', label: 'Dashboard', icon: <LayoutDashboard size={17} />, exact: true },
-  { to: '/admin/files', label: 'Files', icon: <Files size={17} /> },
-  { to: '/admin/users', label: 'Users', icon: <Users size={17} /> },
-  { to: '/admin/logs', label: 'Logs', icon: <ScrollText size={17} /> },
-  { to: '/admin/settings', label: 'Settings', icon: <Settings size={17} /> },
+  { to: '/admin/files', label: 'Dateien', icon: <Files size={17} /> },
+  { to: '/admin/users', label: 'Benutzer', icon: <Users size={17} /> },
+  { to: '/admin/logs', label: 'Protokoll', icon: <ScrollText size={17} /> },
+  { to: '/admin/settings', label: 'Einstellungen', icon: <Settings size={17} /> },
 ]
 
 export function AdminLayout() {
@@ -40,7 +40,7 @@ export function AdminLayout() {
               <Shield size={14} className="text-white" />
             </div>
             <div>
-              <p className="text-sm font-semibold text-text-primary">Admin Panel</p>
+              <p className="text-sm font-semibold text-text-primary">Admin-Bereich</p>
               <p className="text-xs text-text-muted">@{user.username}</p>
             </div>
           </div>
@@ -76,7 +76,7 @@ export function AdminLayout() {
             className="flex items-center gap-2 px-3 py-2 rounded-xl text-sm text-text-muted hover:text-text-primary hover:bg-white/5 transition-colors"
           >
             <Upload size={15} />
-            Back to site
+            Zur Website
           </Link>
         </div>
       </aside>

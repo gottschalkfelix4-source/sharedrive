@@ -16,15 +16,15 @@ export function EmailSettings() {
   const handleTestEmail = async () => {
     const to = form['email.user'] || form['email.from']
     if (!to) {
-      toast.error('Enter an SMTP user or from address first')
+      toast.error('Zuerst SMTP-Benutzer oder Absenderadresse eingeben')
       return
     }
     setTestLoading(true)
     try {
       await testEmail(to)
-      toast.success(`Test email sent to ${to}`)
+      toast.success(`Test-E-Mail an ${to} gesendet`)
     } catch (err: any) {
-      toast.error(err?.response?.data?.error || 'Email test failed')
+      toast.error(err?.response?.data?.error || 'E-Mail-Test fehlgeschlagen')
     } finally {
       setTestLoading(false)
     }
@@ -65,8 +65,8 @@ export function EmailSettings() {
         ...(f['email.password'] ? { 'email.password': f['email.password'] } : {}),
         'email.from': f['email.from'],
       }),
-    onSuccess: () => toast.success('Settings saved'),
-    onError: () => toast.error('Failed to save'),
+    onSuccess: () => toast.success('Einstellungen gespeichert'),
+    onError: () => toast.error('Speichern fehlgeschlagen'),
   })
 
   if (isLoading) return <div className="flex justify-center py-8"><Spinner /></div>
@@ -78,16 +78,16 @@ export function EmailSettings() {
           <Mail size={20} />
         </div>
         <div>
-          <h2 className="font-semibold text-text-primary">Email Configuration</h2>
-          <p className="text-xs text-text-muted">SMTP settings for download notifications</p>
+          <h2 className="font-semibold text-text-primary">E-Mail-Konfiguration</h2>
+          <p className="text-xs text-text-muted">SMTP-Einstellungen für Download-Benachrichtigungen</p>
         </div>
       </div>
 
       <Toggle
         checked={form['email.enabled']}
         onChange={(v) => setForm({ ...form, 'email.enabled': v })}
-        label="Enable email notifications"
-        description="Send emails when transfers are downloaded"
+        label="E-Mail-Benachrichtigungen aktivieren"
+        description="E-Mail senden, wenn Transfers heruntergeladen werden"
       />
 
       <div className={`space-y-4 transition-opacity ${form['email.enabled'] ? 'opacity-100' : 'opacity-40 pointer-events-none'}`}>
@@ -111,33 +111,33 @@ export function EmailSettings() {
         <Toggle
           checked={form['email.secure']}
           onChange={(v) => setForm({ ...form, 'email.secure': v })}
-          label="Use SSL/TLS (port 465)"
-          description="Enable for SSL encryption (not STARTTLS)"
+          label="SSL/TLS verwenden (Port 465)"
+          description="Für SSL-Verschlüsselung aktivieren (kein STARTTLS)"
         />
 
         <div className="grid grid-cols-2 gap-4">
           <Input
-            label="SMTP User"
+            label="SMTP-Benutzer"
             placeholder="user@gmail.com"
             value={form['email.user']}
             onChange={(e) => setForm({ ...form, 'email.user': e.target.value })}
           />
           <Input
-            label="SMTP Password"
+            label="SMTP-Passwort"
             type="password"
-            placeholder={settings?.['email.password']?.includes('•') ? 'Password saved (hidden)' : 'Enter password'}
+            placeholder={settings?.['email.password']?.includes('•') ? 'Passwort gespeichert (versteckt)' : 'Passwort eingeben'}
             value={form['email.password']}
             onChange={(e) => setForm({ ...form, 'email.password': e.target.value })}
           />
         </div>
 
         <Input
-          label="From address"
+          label="Absenderadresse"
           type="email"
           placeholder="noreply@yourdomain.com"
           value={form['email.from']}
           onChange={(e) => setForm({ ...form, 'email.from': e.target.value })}
-          hint="Sender address shown in email client"
+          hint="Absenderadresse im E-Mail-Programm"
         />
       </div>
 
@@ -149,10 +149,10 @@ export function EmailSettings() {
           onClick={handleTestEmail}
           disabled={!form['email.enabled']}
         >
-          Send test email
+          Test-E-Mail senden
         </Button>
         <Button icon={<Save size={15} />} loading={mutation.isPending} onClick={() => mutation.mutate(form)}>
-          Save changes
+          Änderungen speichern
         </Button>
       </div>
     </div>

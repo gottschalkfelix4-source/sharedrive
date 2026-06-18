@@ -30,16 +30,16 @@ function DiagCard() {
           <FlaskConical size={20} />
         </div>
         <div>
-          <h2 className="font-semibold text-text-primary">Diagnostic Endpoints</h2>
-          <p className="text-xs text-text-muted">Use these URLs to test connectivity and upload capacity</p>
+          <h2 className="font-semibold text-text-primary">Diagnose-Endpunkte</h2>
+          <p className="text-xs text-text-muted">URLs zum Testen von Verbindung und Upload-Kapazität</p>
         </div>
       </div>
 
       {isLoading ? <Spinner /> : (
         <div className="space-y-3">
           {[
-            { label: 'Info (GET)', url: infoUrl, hint: 'Returns headers, IP, proxy info' },
-            { label: 'Upload test (POST)', url: uploadUrl, hint: 'Send any body — returns bytes received' },
+            { label: 'Info (GET)', url: infoUrl, hint: 'Gibt Header, IP, Proxy-Infos zurück' },
+            { label: 'Upload-Test (POST)', url: uploadUrl, hint: 'Beliebiger Body – gibt empfangene Bytes zurück' },
           ].map(({ label, url, hint }) => (
             <div key={label}>
               <div className="flex items-center justify-between mb-1">
@@ -61,7 +61,7 @@ function DiagCard() {
             </div>
           ))}
           <p className="text-xs text-text-muted pt-1">
-            The key is derived from your JWT_SECRET and resets on restart.
+            Der Schlüssel wird aus dem JWT_SECRET abgeleitet und setzt sich beim Neustart zurück.
           </p>
         </div>
       )}
@@ -95,8 +95,8 @@ export function GeneralSettings() {
 
   const mutation = useMutation({
     mutationFn: updateSettings,
-    onSuccess: () => toast.success('Settings saved'),
-    onError: () => toast.error('Failed to save'),
+    onSuccess: () => toast.success('Einstellungen gespeichert'),
+    onError: () => toast.error('Speichern fehlgeschlagen'),
   })
 
   if (isLoading) return <div className="flex justify-center py-8"><Spinner /></div>
@@ -109,41 +109,41 @@ export function GeneralSettings() {
             <Globe size={20} />
           </div>
           <div>
-            <h2 className="font-semibold text-text-primary">General Settings</h2>
-            <p className="text-xs text-text-muted">Basic application configuration</p>
+            <h2 className="font-semibold text-text-primary">Allgemeine Einstellungen</h2>
+            <p className="text-xs text-text-muted">Grundlegende App-Konfiguration</p>
           </div>
         </div>
 
         <div className="space-y-4">
           <Input
-            label="Application Name"
+            label="Anwendungsname"
             value={form['app.name']}
             onChange={(e) => setForm({ ...form, 'app.name': e.target.value })}
-            hint="Displayed in the browser tab and emails"
+            hint="Wird im Browser-Tab und in E-Mails angezeigt"
           />
           <Input
-            label="Base URL"
+            label="Basis-URL"
             placeholder="https://share.yourdomain.com"
             value={form['app.baseUrl']}
             onChange={(e) => setForm({ ...form, 'app.baseUrl': e.target.value })}
             icon={<Globe size={15} />}
-            hint="Public URL of this instance — used in download links and emails. No trailing slash."
+            hint="Öffentliche URL dieser Instanz – wird in Download-Links und E-Mails verwendet. Kein abschließender Schrägstrich."
           />
           <Textarea
-            label="Description"
+            label="Beschreibung"
             rows={3}
             value={form['app.description']}
             onChange={(e) => setForm({ ...form, 'app.description': e.target.value })}
-            hint="Shown on the homepage"
+            hint="Wird auf der Startseite angezeigt"
           />
           <Input
-            label="Max files per transfer"
+            label="Max. Dateien pro Transfer"
             type="number"
             min="1"
             max="1000"
             value={form['app.maxFilesPerTransfer']}
             onChange={(e) => setForm({ ...form, 'app.maxFilesPerTransfer': e.target.value })}
-            hint="Maximum number of files allowed in a single transfer"
+            hint="Maximale Anzahl Dateien in einem einzelnen Transfer"
           />
         </div>
 
@@ -153,7 +153,7 @@ export function GeneralSettings() {
             loading={mutation.isPending}
             onClick={() => mutation.mutate(form)}
           >
-            Save changes
+            Änderungen speichern
           </Button>
         </div>
       </div>

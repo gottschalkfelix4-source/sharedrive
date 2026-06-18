@@ -28,17 +28,17 @@ export function AdminFilesPage() {
     onSuccess: () => {
       queryClient.invalidateQueries({ queryKey: ['admin-transfers'] })
       queryClient.invalidateQueries({ queryKey: ['admin-stats'] })
-      toast.success('Transfer deleted')
+      toast.success('Transfer gelöscht')
       setDeleteId(null)
     },
-    onError: () => toast.error('Failed to delete'),
+    onError: () => toast.error('Löschen fehlgeschlagen'),
   })
 
   return (
     <div className="space-y-6">
       <div>
-        <h1 className="text-2xl font-bold text-text-primary">Files</h1>
-        <p className="text-text-muted text-sm mt-1">Manage all transfers</p>
+        <h1 className="text-2xl font-bold text-text-primary">Dateien</h1>
+        <p className="text-text-muted text-sm mt-1">Alle Transfers verwalten</p>
       </div>
 
       {/* Filters */}
@@ -56,9 +56,9 @@ export function AdminFilesPage() {
           onChange={(e) => { setStatus(e.target.value); setPage(1) }}
           className="bg-bg-elevated border border-border rounded-xl px-4 py-2.5 text-sm text-text-primary focus:outline-none focus:ring-2 focus:ring-primary/50"
         >
-          <option value="">All status</option>
-          <option value="active">Active</option>
-          <option value="expired">Expired</option>
+          <option value="">Alle Status</option>
+          <option value="active">Aktiv</option>
+          <option value="expired">Abgelaufen</option>
         </select>
       </div>
 
@@ -75,11 +75,11 @@ export function AdminFilesPage() {
                 <thead>
                   <tr className="border-b border-border text-left">
                     <th className="px-4 py-3 text-text-muted font-medium">Transfer</th>
-                    <th className="px-4 py-3 text-text-muted font-medium hidden sm:table-cell">Uploader</th>
-                    <th className="px-4 py-3 text-text-muted font-medium hidden md:table-cell">Size</th>
+                    <th className="px-4 py-3 text-text-muted font-medium hidden sm:table-cell">Hochlader</th>
+                    <th className="px-4 py-3 text-text-muted font-medium hidden md:table-cell">Größe</th>
                     <th className="px-4 py-3 text-text-muted font-medium hidden md:table-cell">Downloads</th>
                     <th className="px-4 py-3 text-text-muted font-medium">Status</th>
-                    <th className="px-4 py-3 text-text-muted font-medium text-right">Actions</th>
+                    <th className="px-4 py-3 text-text-muted font-medium text-right">Aktionen</th>
                   </tr>
                 </thead>
                 <tbody className="divide-y divide-border">
@@ -94,11 +94,11 @@ export function AdminFilesPage() {
                         <p className="font-medium text-text-primary truncate max-w-[180px]">
                           {t.title || `Transfer ${t.shortId.slice(0, 8)}`}
                         </p>
-                        <p className="text-xs text-text-muted">{t.shortId} · {t.fileCount} files</p>
+                        <p className="text-xs text-text-muted">{t.shortId} · {t.fileCount} Dateien</p>
                       </td>
                       <td className="px-4 py-3 hidden sm:table-cell">
                         <span className="text-text-secondary">
-                          {t.uploaderUsername ? `@${t.uploaderUsername}` : 'Anonymous'}
+                          {t.uploaderUsername ? `@${t.uploaderUsername}` : 'Anonym'}
                         </span>
                       </td>
                       <td className="px-4 py-3 text-text-secondary hidden md:table-cell">
@@ -109,7 +109,7 @@ export function AdminFilesPage() {
                       </td>
                       <td className="px-4 py-3">
                         {t.expired ? (
-                          <Badge variant="danger">Expired</Badge>
+                          <Badge variant="danger">Abgelaufen</Badge>
                         ) : (
                           <Badge variant="success">{formatRelative(t.expiresAt)}</Badge>
                         )}
@@ -130,14 +130,14 @@ export function AdminFilesPage() {
 
             {/* Pagination */}
             <div className="flex items-center justify-between px-4 py-3 border-t border-border">
-              <span className="text-xs text-text-muted">{data?.total ?? 0} total</span>
+              <span className="text-xs text-text-muted">{data?.total ?? 0} gesamt</span>
               <div className="flex items-center gap-2">
                 <Button variant="secondary" size="sm" onClick={() => setPage((p) => p - 1)} disabled={page <= 1}>
-                  Previous
+                  Zurück
                 </Button>
                 <span className="text-sm text-text-muted">{page} / {data?.pages ?? 1}</span>
                 <Button variant="secondary" size="sm" onClick={() => setPage((p) => p + 1)} disabled={page >= (data?.pages ?? 1)}>
-                  Next
+                  Weiter
                 </Button>
               </div>
             </div>
@@ -145,12 +145,12 @@ export function AdminFilesPage() {
         )}
       </div>
 
-      <Modal open={!!deleteId} onClose={() => setDeleteId(null)} title="Delete transfer">
+      <Modal open={!!deleteId} onClose={() => setDeleteId(null)} title="Transfer löschen">
         <p className="text-sm text-text-muted mb-6">
-          Permanently delete this transfer and all its files?
+          Diesen Transfer und alle Dateien dauerhaft löschen?
         </p>
         <div className="flex gap-3">
-          <Button variant="secondary" className="flex-1" onClick={() => setDeleteId(null)}>Cancel</Button>
+          <Button variant="secondary" className="flex-1" onClick={() => setDeleteId(null)}>Abbrechen</Button>
           <Button
             variant="danger"
             className="flex-1"
@@ -158,7 +158,7 @@ export function AdminFilesPage() {
             icon={<Trash2 size={15} />}
             onClick={() => deleteId && deleteMutation.mutate(deleteId)}
           >
-            Delete
+            Löschen
           </Button>
         </div>
       </Modal>

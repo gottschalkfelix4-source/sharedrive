@@ -40,8 +40,8 @@ export function StorageSettings() {
         'storage.retentionDaysAnonymous': f.retentionAnonymous,
         'storage.retentionDaysRegistered': f.retentionRegistered,
       }),
-    onSuccess: () => toast.success('Settings saved'),
-    onError: () => toast.error('Failed to save'),
+    onSuccess: () => toast.success('Einstellungen gespeichert'),
+    onError: () => toast.error('Speichern fehlgeschlagen'),
   })
 
   if (isLoading) return <div className="flex justify-center py-8"><Spinner /></div>
@@ -53,53 +53,53 @@ export function StorageSettings() {
           <HardDrive size={20} />
         </div>
         <div>
-          <h2 className="font-semibold text-text-primary">Storage & Limits</h2>
-          <p className="text-xs text-text-muted">File sizes, transfer limits and retention policy</p>
+          <h2 className="font-semibold text-text-primary">Speicher & Limits</h2>
+          <p className="text-xs text-text-muted">Dateigrößen, Transfer-Limits und Aufbewahrungsrichtlinie</p>
         </div>
       </div>
 
       <div className="space-y-6">
         <div className="grid grid-cols-2 gap-4">
           <Input
-            label="Max file size (GB)"
+            label="Max. Dateigröße (GB)"
             type="number"
             min="0.1"
             step="0.5"
             value={form.maxFileSizeGB}
             onChange={(e) => setForm({ ...form, maxFileSizeGB: e.target.value })}
-            hint={`≈ ${formatBytes(gbToBytes(form.maxFileSizeGB))} per file`}
+            hint={`≈ ${formatBytes(gbToBytes(form.maxFileSizeGB))} pro Datei`}
           />
           <Input
-            label="Max transfer size (GB)"
+            label="Max. Transfergröße (GB)"
             type="number"
             min="0.1"
             step="1"
             value={form.maxTransferSizeGB}
             onChange={(e) => setForm({ ...form, maxTransferSizeGB: e.target.value })}
-            hint={`≈ ${formatBytes(gbToBytes(form.maxTransferSizeGB))} total`}
+            hint={`≈ ${formatBytes(gbToBytes(form.maxTransferSizeGB))} gesamt`}
           />
         </div>
 
         <div>
-          <h3 className="text-sm font-semibold text-text-primary mb-3">Retention Policy</h3>
+          <h3 className="text-sm font-semibold text-text-primary mb-3">Aufbewahrungsrichtlinie</h3>
           <div className="grid grid-cols-2 gap-4">
             <Input
-              label="Anonymous transfers (days)"
+              label="Anonyme Transfers (Tage)"
               type="number"
               min="1"
               max="365"
               value={form.retentionAnonymous}
               onChange={(e) => setForm({ ...form, retentionAnonymous: e.target.value })}
-              hint="Files from non-registered users"
+              hint="Dateien von nicht registrierten Benutzern"
             />
             <Input
-              label="Registered users (days)"
+              label="Registrierte Benutzer (Tage)"
               type="number"
               min="1"
               max="365"
               value={form.retentionRegistered}
               onChange={(e) => setForm({ ...form, retentionRegistered: e.target.value })}
-              hint="Files from registered accounts"
+              hint="Dateien von registrierten Konten"
             />
           </div>
         </div>
@@ -107,7 +107,7 @@ export function StorageSettings() {
 
       <div className="flex justify-end pt-2 border-t border-border">
         <Button icon={<Save size={15} />} loading={mutation.isPending} onClick={() => mutation.mutate(form)}>
-          Save changes
+          Änderungen speichern
         </Button>
       </div>
     </div>

@@ -18,7 +18,7 @@ export function RegisterPage() {
   const handleSubmit = async (e: React.FormEvent) => {
     e.preventDefault()
     if (form.password.length < 8) {
-      toast.error('Password must be at least 8 characters')
+      toast.error('Passwort muss mindestens 8 Zeichen lang sein')
       return
     }
     setLoading(true)
@@ -28,11 +28,11 @@ export function RegisterPage() {
         setVerificationSent(true)
       } else if (result.token && result.user) {
         setAuth(result.user, result.token)
-        toast.success(`Welcome, ${result.user.username}!`)
+        toast.success(`Willkommen, ${result.user.username}!`)
         navigate('/dashboard')
       }
     } catch (err: any) {
-      toast.error(err?.response?.data?.error || 'Registration failed')
+      toast.error(err?.response?.data?.error || 'Registrierung fehlgeschlagen')
     } finally {
       setLoading(false)
     }
@@ -49,21 +49,21 @@ export function RegisterPage() {
           <div className="w-16 h-16 rounded-2xl bg-emerald-500/10 border border-emerald-500/20 flex items-center justify-center mx-auto mb-6">
             <CheckCircle size={32} className="text-emerald-400" />
           </div>
-          <h1 className="text-2xl font-bold text-text-primary mb-2">Check your email</h1>
+          <h1 className="text-2xl font-bold text-text-primary mb-2">E-Mail prüfen</h1>
           <p className="text-text-muted text-sm mb-6">
-            We sent a verification link to <span className="text-text-primary font-medium">{form.email}</span>.
-            Click the link in the email to activate your account.
+            Wir haben einen Bestätigungslink an <span className="text-text-primary font-medium">{form.email}</span> gesendet.
+            Klicke den Link in der E-Mail, um dein Konto zu aktivieren.
           </p>
           <div className="bg-bg-card border border-border rounded-2xl p-4 text-left space-y-2">
-            <p className="text-xs text-text-muted">Didn't receive an email?</p>
+            <p className="text-xs text-text-muted">Keine E-Mail erhalten?</p>
             <ul className="text-xs text-text-muted list-disc list-inside space-y-1">
-              <li>Check your spam folder</li>
-              <li>Make sure the email address is correct</li>
-              <li>The link expires after 24 hours</li>
+              <li>Spam-Ordner prüfen</li>
+              <li>Sicherstellen, dass die E-Mail-Adresse korrekt ist</li>
+              <li>Der Link läuft nach 24 Stunden ab</li>
             </ul>
           </div>
           <p className="text-center text-sm text-text-muted mt-6">
-            <Link to="/login" className="text-primary hover:underline">Back to sign in</Link>
+            <Link to="/login" className="text-primary hover:underline">Zurück zur Anmeldung</Link>
           </p>
         </motion.div>
       </div>
@@ -85,14 +85,14 @@ export function RegisterPage() {
           <div className="w-12 h-12 rounded-xl bg-gradient-primary flex items-center justify-center mx-auto mb-4">
             <Upload size={22} className="text-white" />
           </div>
-          <h1 className="text-2xl font-bold text-text-primary">Create account</h1>
-          <p className="text-text-muted text-sm mt-1">Get transfer history & more</p>
+          <h1 className="text-2xl font-bold text-text-primary">Konto erstellen</h1>
+          <p className="text-text-muted text-sm mt-1">Transfer-Verlauf & mehr</p>
         </div>
 
         <div className="bg-bg-card border border-border rounded-2xl p-6 shadow-card">
           <form onSubmit={handleSubmit} className="space-y-4">
             <Input
-              label="Email"
+              label="E-Mail"
               type="email"
               placeholder="you@example.com"
               value={form.email}
@@ -101,33 +101,33 @@ export function RegisterPage() {
               required
             />
             <Input
-              label="Username"
+              label="Benutzername"
               placeholder="cooluser"
               value={form.username}
               onChange={(e) => setForm({ ...form, username: e.target.value })}
               icon={<User size={15} />}
-              hint="3–32 chars, letters, numbers, - and _"
+              hint="3–32 Zeichen, Buchstaben, Zahlen, - und _"
               required
             />
             <Input
-              label="Password"
+              label="Passwort"
               type="password"
-              placeholder="Min. 8 characters"
+              placeholder="Mind. 8 Zeichen"
               value={form.password}
               onChange={(e) => setForm({ ...form, password: e.target.value })}
               icon={<Lock size={15} />}
               required
             />
             <Button type="submit" className="w-full" size="lg" loading={loading} icon={<UserPlus size={17} />}>
-              Create account
+              Konto erstellen
             </Button>
           </form>
         </div>
 
         <p className="text-center text-sm text-text-muted mt-4">
-          Already have an account?{' '}
+          Bereits ein Konto?{' '}
           <Link to="/login" className="text-primary hover:underline">
-            Sign in
+            Anmelden
           </Link>
         </p>
       </motion.div>

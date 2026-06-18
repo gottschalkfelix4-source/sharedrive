@@ -71,10 +71,10 @@ export function AdminLogsPage() {
             <ScrollText size={20} />
           </div>
           <div>
-            <h1 className="text-xl font-bold text-text-primary">Logs</h1>
+            <h1 className="text-xl font-bold text-text-primary">Protokoll</h1>
             <p className="text-xs text-text-muted">
-              {data ? `${data.total} entries` : '—'}
-              {isFetching && !isLoading && <span className="ml-2 opacity-60">refreshing…</span>}
+              {data ? `${data.total} Einträge` : '—'}
+              {isFetching && !isLoading && <span className="ml-2 opacity-60">wird aktualisiert…</span>}
             </p>
           </div>
         </div>
@@ -90,14 +90,14 @@ export function AdminLogsPage() {
             )}
           >
             <RefreshCw size={12} className={autoRefresh ? 'animate-spin' : ''} />
-            Auto-refresh
+            Auto-Aktualisierung
           </button>
           <button
             onClick={() => refetch()}
             className="flex items-center gap-1.5 px-3 py-1.5 rounded-lg text-xs font-medium border border-border text-text-muted hover:text-text-primary hover:border-border-strong transition-colors"
           >
             <RefreshCw size={12} />
-            Refresh
+            Aktualisieren
           </button>
         </div>
       </div>
@@ -146,7 +146,7 @@ export function AdminLogsPage() {
           <input
             value={searchInput}
             onChange={(e) => setSearchInput(e.target.value)}
-            placeholder="Search messages…"
+            placeholder="Nachrichten suchen…"
             className="w-full pl-8 pr-3 py-1.5 bg-bg-elevated border border-border rounded-lg text-xs text-text-primary placeholder-text-muted focus:outline-none focus:border-primary/50 transition-colors"
           />
         </div>
@@ -157,7 +157,7 @@ export function AdminLogsPage() {
         {isLoading ? (
           <div className="flex justify-center py-12"><Spinner /></div>
         ) : logs.length === 0 ? (
-          <div className="text-center py-12 text-text-muted text-sm">No log entries found</div>
+          <div className="text-center py-12 text-text-muted text-sm">Keine Protokolleinträge gefunden</div>
         ) : (
           <div className="divide-y divide-border/50 font-mono text-xs">
             {logs.map((entry) => (
@@ -199,7 +199,7 @@ export function AdminLogsPage() {
         {data && data.pages > 1 && (
           <div className="flex items-center justify-between px-4 py-3 border-t border-border">
             <span className="text-xs text-text-muted">
-              Page {page} of {data.pages}
+              Seite {page} von {data.pages}
             </span>
             <div className="flex gap-1">
               <button

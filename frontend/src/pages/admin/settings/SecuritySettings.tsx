@@ -30,8 +30,8 @@ export function SecuritySettings() {
         'security.registrationEnabled': String(f.registrationEnabled),
         'security.requireEmailVerification': String(f.requireEmailVerification),
       }),
-    onSuccess: () => toast.success('Settings saved'),
-    onError: () => toast.error('Failed to save'),
+    onSuccess: () => toast.success('Einstellungen gespeichert'),
+    onError: () => toast.error('Speichern fehlgeschlagen'),
   })
 
   if (isLoading) return <div className="flex justify-center py-8"><Spinner /></div>
@@ -43,8 +43,8 @@ export function SecuritySettings() {
           <Lock size={20} />
         </div>
         <div>
-          <h2 className="font-semibold text-text-primary">Security & Access</h2>
-          <p className="text-xs text-text-muted">Registration and access control</p>
+          <h2 className="font-semibold text-text-primary">Sicherheit & Zugang</h2>
+          <p className="text-xs text-text-muted">Registrierung und Zugangskontrolle</p>
         </div>
       </div>
 
@@ -53,8 +53,8 @@ export function SecuritySettings() {
           <Toggle
             checked={form.registrationEnabled}
             onChange={(v) => setForm({ ...form, registrationEnabled: v })}
-            label="Allow registration"
-            description="Let new users create accounts. Disable to make the platform invite-only."
+            label="Registrierung erlauben"
+            description="Neuen Benutzern die Kontoerstellung erlauben. Deaktivieren für Einladungs-Only-Betrieb."
           />
         </div>
 
@@ -62,15 +62,15 @@ export function SecuritySettings() {
           <Toggle
             checked={form.requireEmailVerification}
             onChange={(v) => setForm({ ...form, requireEmailVerification: v })}
-            label="Require email verification"
-            description="Users must verify their email address before accessing the platform."
+            label="E-Mail-Verifizierung erforderlich"
+            description="Benutzer müssen ihre E-Mail-Adresse bestätigen, bevor sie die Plattform nutzen können."
           />
         </div>
       </div>
 
       <div className="flex justify-end pt-2 border-t border-border">
         <Button icon={<Save size={15} />} loading={mutation.isPending} onClick={() => mutation.mutate(form)}>
-          Save changes
+          Änderungen speichern
         </Button>
       </div>
     </div>

@@ -45,8 +45,8 @@ export function UploadProgress({ percent, speed, eta, fileCount }: UploadProgres
       </div>
 
       <div>
-        <p className="text-lg font-semibold text-text-primary">Uploading {fileCount} file{fileCount > 1 ? 's' : ''}…</p>
-        <p className="text-sm text-text-muted mt-1">Please don't close this tab</p>
+        <p className="text-lg font-semibold text-text-primary">{fileCount} Datei{fileCount > 1 ? 'en werden' : ' wird'} hochgeladen…</p>
+        <p className="text-sm text-text-muted mt-1">Bitte diesen Tab nicht schließen</p>
       </div>
 
       <div className="flex items-center justify-center gap-6 text-sm text-text-secondary">
@@ -56,7 +56,7 @@ export function UploadProgress({ percent, speed, eta, fileCount }: UploadProgres
         </span>
         <span className="flex items-center gap-1.5">
           <Clock size={14} className="text-primary" />
-          {eta} remaining
+          {eta} verbleibend
         </span>
       </div>
     </motion.div>

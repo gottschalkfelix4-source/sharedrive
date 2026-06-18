@@ -3,11 +3,11 @@ import { Settings, HardDrive, Mail, Lock, Palette, ChevronRight } from 'lucide-r
 import { cn } from '@/lib/utils'
 
 const settingsNav = [
-  { to: '/admin/settings', label: 'General', icon: <Settings size={16} />, exact: true, desc: 'App name, description' },
-  { to: '/admin/settings/storage', label: 'Storage', icon: <HardDrive size={16} />, desc: 'Limits & retention' },
-  { to: '/admin/settings/email', label: 'Email', icon: <Mail size={16} />, desc: 'SMTP configuration' },
-  { to: '/admin/settings/security', label: 'Security', icon: <Lock size={16} />, desc: 'Registration & access' },
-  { to: '/admin/settings/appearance', label: 'Appearance', icon: <Palette size={16} />, desc: 'Colors & branding' },
+  { to: '/admin/settings', label: 'Allgemein', icon: <Settings size={16} />, exact: true, desc: 'App-Name, Beschreibung' },
+  { to: '/admin/settings/storage', label: 'Speicher', icon: <HardDrive size={16} />, desc: 'Limits & Aufbewahrung' },
+  { to: '/admin/settings/email', label: 'E-Mail', icon: <Mail size={16} />, desc: 'SMTP-Konfiguration' },
+  { to: '/admin/settings/security', label: 'Sicherheit', icon: <Lock size={16} />, desc: 'Registrierung & Zugang' },
+  { to: '/admin/settings/appearance', label: 'Erscheinungsbild', icon: <Palette size={16} />, desc: 'Farben & Branding' },
 ]
 
 export function SettingsLayout() {
@@ -16,8 +16,8 @@ export function SettingsLayout() {
   return (
     <div className="space-y-6">
       <div>
-        <h1 className="text-2xl font-bold text-text-primary">Settings</h1>
-        <p className="text-text-muted text-sm mt-1">Configure your ShareDrive instance</p>
+        <h1 className="text-2xl font-bold text-text-primary">Einstellungen</h1>
+        <p className="text-text-muted text-sm mt-1">ShareDrive-Instanz konfigurieren</p>
       </div>
 
       <div className="flex gap-6 flex-col md:flex-row">

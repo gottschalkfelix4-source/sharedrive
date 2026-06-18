@@ -52,7 +52,7 @@ export function DownloadPage() {
   }
 
   if (error) {
-    const errMsg = (error as any)?.response?.data?.error || 'Transfer not found'
+    const errMsg = (error as any)?.response?.data?.error || 'Transfer nicht gefunden'
     const isPasswordRequired = (error as any)?.response?.status === 401
 
     if (isPasswordRequired && !enteredPassword) {
@@ -66,8 +66,8 @@ export function DownloadPage() {
             <div className="w-16 h-16 rounded-full bg-amber-500/10 border border-amber-500/20 flex items-center justify-center mx-auto mb-4">
               <Lock size={28} className="text-amber-400" />
             </div>
-            <h2 className="text-xl font-bold text-text-primary mb-2">Password Protected</h2>
-            <p className="text-text-muted text-sm mb-6">Enter the password to access this transfer</p>
+            <h2 className="text-xl font-bold text-text-primary mb-2">Passwortgeschützt</h2>
+            <p className="text-text-muted text-sm mb-6">Passwort eingeben, um auf diesen Transfer zuzugreifen</p>
             <form onSubmit={handlePasswordSubmit} className="space-y-3">
               <Input
                 type="password"
@@ -78,7 +78,7 @@ export function DownloadPage() {
                 icon={<Lock size={15} />}
               />
               <Button type="submit" className="w-full" size="lg">
-                Unlock transfer
+                Transfer entsperren
               </Button>
             </form>
           </motion.div>
@@ -96,7 +96,7 @@ export function DownloadPage() {
           <div className="w-16 h-16 rounded-full bg-red-500/10 border border-red-500/20 flex items-center justify-center mx-auto mb-4">
             <AlertCircle size={28} className="text-red-400" />
           </div>
-          <h2 className="text-xl font-bold text-text-primary mb-2">Transfer unavailable</h2>
+          <h2 className="text-xl font-bold text-text-primary mb-2">Transfer nicht verfügbar</h2>
           <p className="text-text-muted text-sm">{errMsg}</p>
         </motion.div>
       </div>
@@ -121,7 +121,7 @@ export function DownloadPage() {
               <Download size={28} className="text-white" />
             </div>
             <h1 className="text-2xl font-bold text-text-primary">
-              {transfer.title || 'Shared Transfer'}
+              {transfer.title || 'Geteilter Transfer'}
             </h1>
             {transfer.message && (
               <p className="text-text-muted text-sm mt-2 italic">"{transfer.message}"</p>
@@ -129,12 +129,12 @@ export function DownloadPage() {
             <div className="flex items-center justify-center gap-3 mt-3 flex-wrap">
               <Badge variant={isExpired ? 'danger' : 'success'}>
                 <Clock size={11} className="mr-1" />
-                {isExpired ? 'Expired' : `Expires ${formatRelative(transfer.expiresAt)}`}
+                {isExpired ? 'Abgelaufen' : `Läuft ab ${formatRelative(transfer.expiresAt)}`}
               </Badge>
               <Badge>{formatBytes(transfer.totalSize)}</Badge>
-              <Badge>{transfer.files.length} file{transfer.files.length > 1 ? 's' : ''}</Badge>
+              <Badge>{transfer.files.length} Datei{transfer.files.length > 1 ? 'en' : ''}</Badge>
               {transfer.downloadCount > 0 && (
-                <Badge variant="info">{transfer.downloadCount} downloads</Badge>
+                <Badge variant="info">{transfer.downloadCount} Downloads</Badge>
               )}
             </div>
           </div>
@@ -142,7 +142,7 @@ export function DownloadPage() {
           {/* Files */}
           <div className="bg-bg-card border border-border rounded-2xl overflow-hidden mb-4">
             <div className="px-4 py-3 border-b border-border flex items-center justify-between">
-              <span className="text-sm font-medium text-text-secondary">Files</span>
+              <span className="text-sm font-medium text-text-secondary">Dateien</span>
               {transfer.files.length > 1 && !isExpired && (
                 <Button
                   variant="ghost"
@@ -150,7 +150,7 @@ export function DownloadPage() {
                   icon={<Archive size={14} />}
                   onClick={handleDownloadAll}
                 >
-                  Download all
+                  Alle herunterladen
                 </Button>
               )}
             </div>
@@ -176,7 +176,7 @@ export function DownloadPage() {
                       icon={<Download size={13} />}
                       onClick={() => handleDownloadFile(file.id)}
                     >
-                      Download
+                      Herunterladen
                     </Button>
                   )}
                 </motion.div>
@@ -191,12 +191,12 @@ export function DownloadPage() {
               icon={<Download size={18} />}
               onClick={transfer.files.length === 1 ? () => handleDownloadFile(transfer.files[0].id) : handleDownloadAll}
             >
-              {transfer.files.length === 1 ? 'Download file' : 'Download all as ZIP'}
+              {transfer.files.length === 1 ? 'Datei herunterladen' : 'Alle als ZIP herunterladen'}
             </Button>
           )}
 
           <p className="text-center text-xs text-text-muted mt-4">
-            Expires {formatDate(transfer.expiresAt)}
+            Läuft ab am {formatDate(transfer.expiresAt)}
           </p>
         </motion.div>
       </div>

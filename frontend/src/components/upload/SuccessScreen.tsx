@@ -46,9 +46,9 @@ export function SuccessScreen({ shortId, expiresAt, fileCount, totalSize, onRese
       </motion.div>
 
       <div>
-        <h2 className="text-2xl font-bold text-text-primary">Transfer ready!</h2>
+        <h2 className="text-2xl font-bold text-text-primary">Transfer bereit!</h2>
         <p className="text-text-muted mt-1">
-          {fileCount} file{fileCount > 1 ? 's' : ''} · {formatBytes(totalSize)} · expires {formatRelative(expiresAt)}
+          {fileCount} Datei{fileCount > 1 ? 'en' : ''} · {formatBytes(totalSize)} · läuft ab {formatRelative(expiresAt)}
         </p>
       </div>
 
@@ -61,7 +61,7 @@ export function SuccessScreen({ shortId, expiresAt, fileCount, totalSize, onRese
           icon={copied ? <Check size={14} /> : <Copy size={14} />}
           onClick={handleCopy}
         >
-          {copied ? 'Copied!' : 'Copy'}
+          {copied ? 'Kopiert!' : 'Kopieren'}
         </Button>
       </div>
 
@@ -73,14 +73,14 @@ export function SuccessScreen({ shortId, expiresAt, fileCount, totalSize, onRese
           icon={<ExternalLink size={15} />}
           onClick={() => window.open(`/d/${shortId}`, '_blank')}
         >
-          Open download page
+          Download-Seite öffnen
         </Button>
         <Button
           variant="secondary"
           icon={<RotateCcw size={15} />}
           onClick={onReset}
         >
-          New transfer
+          Neuer Transfer
         </Button>
       </div>
     </motion.div>

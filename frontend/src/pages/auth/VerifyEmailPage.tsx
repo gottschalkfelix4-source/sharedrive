@@ -16,7 +16,7 @@ export function VerifyEmailPage() {
   useEffect(() => {
     const token = searchParams.get('token')
     if (!token) {
-      setErrorMessage('Missing verification token.')
+      setErrorMessage('Bestätigungstoken fehlt.')
       setStatus('error')
       return
     }
@@ -28,7 +28,7 @@ export function VerifyEmailPage() {
         setTimeout(() => navigate('/dashboard'), 2500)
       })
       .catch((err: any) => {
-        setErrorMessage(err?.response?.data?.error || 'This link is invalid or has expired.')
+        setErrorMessage(err?.response?.data?.error || 'Dieser Link ist ungültig oder abgelaufen.')
         setStatus('error')
       })
   }, [])
@@ -43,7 +43,7 @@ export function VerifyEmailPage() {
         {status === 'loading' && (
           <>
             <Loader2 size={40} className="text-primary animate-spin mx-auto mb-4" />
-            <h1 className="text-xl font-bold text-text-primary">Verifying your email…</h1>
+            <h1 className="text-xl font-bold text-text-primary">E-Mail wird verifiziert…</h1>
           </>
         )}
 
@@ -52,8 +52,8 @@ export function VerifyEmailPage() {
             <div className="w-16 h-16 rounded-2xl bg-emerald-500/10 border border-emerald-500/20 flex items-center justify-center mx-auto mb-6">
               <CheckCircle size={32} className="text-emerald-400" />
             </div>
-            <h1 className="text-2xl font-bold text-text-primary mb-2">Email verified!</h1>
-            <p className="text-text-muted text-sm">Your account is now active. Redirecting to your dashboard…</p>
+            <h1 className="text-2xl font-bold text-text-primary mb-2">E-Mail bestätigt!</h1>
+            <p className="text-text-muted text-sm">Dein Konto ist jetzt aktiv. Du wirst zum Dashboard weitergeleitet…</p>
           </>
         )}
 
@@ -62,14 +62,14 @@ export function VerifyEmailPage() {
             <div className="w-16 h-16 rounded-2xl bg-red-500/10 border border-red-500/20 flex items-center justify-center mx-auto mb-6">
               <XCircle size={32} className="text-red-400" />
             </div>
-            <h1 className="text-2xl font-bold text-text-primary mb-2">Verification failed</h1>
+            <h1 className="text-2xl font-bold text-text-primary mb-2">Verifizierung fehlgeschlagen</h1>
             <p className="text-text-muted text-sm mb-6">{errorMessage}</p>
             <Button variant="secondary" onClick={() => navigate('/register')}>
-              Back to register
+              Zurück zur Registrierung
             </Button>
             <p className="text-sm text-text-muted mt-4">
-              Already verified?{' '}
-              <Link to="/login" className="text-primary hover:underline">Sign in</Link>
+              Bereits verifiziert?{' '}
+              <Link to="/login" className="text-primary hover:underline">Anmelden</Link>
             </p>
           </>
         )}

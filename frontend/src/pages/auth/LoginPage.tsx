@@ -20,10 +20,10 @@ export function LoginPage() {
     try {
       const { token, user } = await login(form.email, form.password)
       setAuth(user, token)
-      toast.success(`Welcome back, ${user.username}!`)
+      toast.success(`Willkommen zurück, ${user.username}!`)
       navigate(user.role === 'ADMIN' ? '/admin' : '/dashboard')
     } catch (err: any) {
-      toast.error(err?.response?.data?.error || 'Login failed')
+      toast.error(err?.response?.data?.error || 'Anmeldung fehlgeschlagen')
     } finally {
       setLoading(false)
     }
@@ -44,14 +44,14 @@ export function LoginPage() {
           <div className="w-12 h-12 rounded-xl bg-gradient-primary flex items-center justify-center mx-auto mb-4">
             <Upload size={22} className="text-white" />
           </div>
-          <h1 className="text-2xl font-bold text-text-primary">Welcome back</h1>
-          <p className="text-text-muted text-sm mt-1">Sign in to your account</p>
+          <h1 className="text-2xl font-bold text-text-primary">Willkommen zurück</h1>
+          <p className="text-text-muted text-sm mt-1">In dein Konto einloggen</p>
         </div>
 
         <div className="bg-bg-card border border-border rounded-2xl p-6 shadow-card">
           <form onSubmit={handleSubmit} className="space-y-4">
             <Input
-              label="Email"
+              label="E-Mail"
               type="email"
               placeholder="you@example.com"
               value={form.email}
@@ -60,24 +60,24 @@ export function LoginPage() {
               required
             />
             <Input
-              label="Password"
+              label="Passwort"
               type="password"
-              placeholder="Your password"
+              placeholder="Dein Passwort"
               value={form.password}
               onChange={(e) => setForm({ ...form, password: e.target.value })}
               icon={<Lock size={15} />}
               required
             />
             <Button type="submit" className="w-full" size="lg" loading={loading} icon={<LogIn size={17} />}>
-              Sign in
+              Anmelden
             </Button>
           </form>
         </div>
 
         <p className="text-center text-sm text-text-muted mt-4">
-          Don't have an account?{' '}
+          Noch kein Konto?{' '}
           <Link to="/register" className="text-primary hover:underline">
-            Register
+            Registrieren
           </Link>
         </p>
       </motion.div>

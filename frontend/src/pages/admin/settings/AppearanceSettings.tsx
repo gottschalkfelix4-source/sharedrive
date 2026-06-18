@@ -37,20 +37,20 @@ function ImageUpload({
 
   const handleFile = async (file: File) => {
     if (!file.type.startsWith('image/')) {
-      toast.error('Only image files are allowed')
+      toast.error('Nur Bilddateien sind erlaubt')
       return
     }
     if (file.size > 2 * 1024 * 1024) {
-      toast.error('File too large — max 2 MB')
+      toast.error('Datei zu groß – max. 2 MB')
       return
     }
     setUploading(true)
     try {
       const url = await uploadAsset(type, file)
       onUploaded(url)
-      toast.success(`${label} uploaded`)
+      toast.success(`${label} hochgeladen`)
     } catch (err: any) {
-      toast.error(err?.response?.data?.error || 'Upload failed')
+      toast.error(err?.response?.data?.error || 'Upload fehlgeschlagen')
     } finally {
       setUploading(false)
     }
@@ -61,9 +61,9 @@ function ImageUpload({
     try {
       await deleteAsset(type)
       onDeleted()
-      toast.success(`${label} removed`)
+      toast.success(`${label} entfernt`)
     } catch {
-      toast.error('Failed to remove')
+      toast.error('Entfernen fehlgeschlagen')
     } finally {
       setDeleting(false)
     }
@@ -109,13 +109,13 @@ function ImageUpload({
           {uploading ? (
             <div className="flex items-center justify-center gap-2 py-1">
               <Spinner size="sm" />
-              <span className="text-sm text-text-muted">Uploading…</span>
+              <span className="text-sm text-text-muted">Wird hochgeladen…</span>
             </div>
           ) : (
             <>
               <Upload size={18} className="text-text-muted mx-auto mb-1" />
               <p className="text-sm text-text-secondary">
-                {value ? 'Replace image' : 'Click or drag to upload'}
+                {value ? 'Bild ersetzen' : 'Klicken oder ablegen'}
               </p>
               <p className="text-xs text-text-muted mt-0.5">PNG, JPG, SVG, ICO — max 2 MB</p>
             </>
@@ -170,9 +170,9 @@ export function AppearanceSettings() {
     mutationFn: () => updateSettings({ 'appearance.primaryColor': color }),
     onSuccess: () => {
       queryClient.invalidateQueries({ queryKey: ['admin-settings'] })
-      toast.success('Settings saved')
+      toast.success('Einstellungen gespeichert')
     },
-    onError: () => toast.error('Failed to save'),
+    onError: () => toast.error('Speichern fehlgeschlagen'),
   })
 
   if (isLoading) return <div className="flex justify-center py-8"><Spinner /></div>
@@ -184,15 +184,15 @@ export function AppearanceSettings() {
           <Palette size={20} />
         </div>
         <div>
-          <h2 className="font-semibold text-text-primary">Appearance</h2>
-          <p className="text-xs text-text-muted">Brand colors and visual identity</p>
+          <h2 className="font-semibold text-text-primary">Erscheinungsbild</h2>
+          <p className="text-xs text-text-muted">Markenfarben und visuelle Identität</p>
         </div>
       </div>
 
       <div className="space-y-8">
         {/* Color picker */}
         <div>
-          <label className="text-sm font-medium text-text-secondary block mb-3">Primary Color</label>
+          <label className="text-sm font-medium text-text-secondary block mb-3">Primärfarbe</label>
           <div className="flex items-center gap-3 flex-wrap">
             {presetColors.map((c) => (
               <button
@@ -220,19 +220,19 @@ export function AppearanceSettings() {
           </div>
 
           <div className="mt-4 p-4 bg-bg-elevated rounded-xl border border-border">
-            <p className="text-xs text-text-muted mb-2">Preview</p>
+            <p className="text-xs text-text-muted mb-2">Vorschau</p>
             <div className="flex gap-2">
               <button
                 className="px-4 py-2 rounded-xl text-sm text-white font-medium"
                 style={{ background: `linear-gradient(135deg, ${color}, ${color}cc)` }}
               >
-                Upload
+                Hochladen
               </button>
               <div
                 className="px-4 py-2 rounded-xl text-sm border"
                 style={{ borderColor: `${color}50`, color }}
               >
-                Learn more
+                Mehr erfahren
               </div>
             </div>
           </div>
@@ -241,7 +241,7 @@ export function AppearanceSettings() {
         {/* Logo upload */}
         <ImageUpload
           label="Logo"
-          hint="Shown in the navbar. Replaces the text logo. Recommended: PNG or SVG, min 120 px tall."
+          hint="Wird in der Navbar angezeigt. Ersetzt das Text-Logo. Empfohlen: PNG oder SVG, mind. 120 px hoch."
           value={logoUrl}
           type="logo"
           onUploaded={(url) => setLogoUrl(url)}
@@ -251,7 +251,7 @@ export function AppearanceSettings() {
         {/* Favicon upload */}
         <ImageUpload
           label="Favicon"
-          hint="Browser tab icon. Recommended: ICO, PNG or SVG, 32×32 px."
+          hint="Browser-Tab-Icon. Empfohlen: ICO, PNG oder SVG, 32×32 px."
           value={faviconUrl}
           type="favicon"
           onUploaded={(url) => setFaviconUrl(url)}
@@ -261,7 +261,7 @@ export function AppearanceSettings() {
 
       <div className="flex justify-end pt-2 border-t border-border">
         <Button icon={<Save size={15} />} loading={mutation.isPending} onClick={() => mutation.mutate()}>
-          Save color
+          Farbe speichern
         </Button>
       </div>
     </div>

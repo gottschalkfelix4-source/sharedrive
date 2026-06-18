@@ -66,11 +66,11 @@ export function UploadZone({ files, onFilesAdded, onFileRemove, maxSize }: Uploa
 
         <div>
           <p className="text-lg font-semibold text-text-primary">
-            {isDragActive ? 'Drop your files here' : 'Drop files here'}
+            {isDragActive ? 'Dateien hier ablegen' : 'Dateien hier ablegen'}
           </p>
           <p className="text-sm text-text-muted mt-1">
-            or <span className="text-primary">click to browse</span>
-            {maxSize && ` · max ${formatBytes(maxSize)} per file`}
+            oder <span className="text-primary">zum Durchsuchen klicken</span>
+            {maxSize && ` · max ${formatBytes(maxSize)} pro Datei`}
           </p>
         </div>
       </div>
@@ -110,7 +110,7 @@ export function UploadZone({ files, onFilesAdded, onFileRemove, maxSize }: Uploa
 
             <label className="flex items-center gap-2 p-3 rounded-xl border border-dashed border-border text-text-muted hover:border-border-strong hover:text-text-secondary cursor-pointer transition-colors text-sm">
               <Plus size={16} />
-              Add more files
+              Weitere Dateien hinzufügen
               <input
                 type="file"
                 multiple

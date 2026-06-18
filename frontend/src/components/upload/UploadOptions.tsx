@@ -29,7 +29,7 @@ export function UploadOptions({ options, onChange }: UploadOptionsProps) {
       >
         <span className="flex items-center gap-2">
           <Settings2 size={16} />
-          Transfer Options
+          Transfer-Optionen
         </span>
         <motion.span animate={{ rotate: open ? 180 : 0 }} transition={{ duration: 0.2 }}>
           <ChevronDown size={16} />
@@ -47,16 +47,16 @@ export function UploadOptions({ options, onChange }: UploadOptionsProps) {
           >
             <div className="px-4 pb-4 pt-2 space-y-4 border-t border-border">
               <Input
-                label="Title (optional)"
-                placeholder="My important files"
+                label="Titel (optional)"
+                placeholder="Meine wichtigen Dateien"
                 value={options.title}
                 onChange={(e) => onChange('title', e.target.value)}
                 icon={<MessageSquare size={15} />}
               />
 
               <Textarea
-                label="Message (optional)"
-                placeholder="Add a message for the recipient..."
+                label="Nachricht (optional)"
+                placeholder="Nachricht für den Empfänger..."
                 rows={3}
                 value={options.message}
                 onChange={(e) => onChange('message', e.target.value)}
@@ -65,18 +65,18 @@ export function UploadOptions({ options, onChange }: UploadOptionsProps) {
               <div>
                 <label className="text-sm font-medium text-text-secondary block mb-1.5">
                   <Calendar size={14} className="inline mr-1.5" />
-                  Expires in
+                  Läuft ab in
                 </label>
                 <select
                   value={options.expiresInDays}
                   onChange={(e) => onChange('expiresInDays', parseInt(e.target.value))}
                   className="w-full bg-bg-elevated border border-border rounded-xl px-4 py-2.5 text-sm text-text-primary focus:outline-none focus:ring-2 focus:ring-primary/50 focus:border-primary/50 transition-all"
                 >
-                  <option value={1}>1 day</option>
-                  <option value={3}>3 days</option>
-                  <option value={7}>7 days</option>
-                  <option value={14}>14 days</option>
-                  <option value={30}>30 days</option>
+                  <option value={1}>1 Tag</option>
+                  <option value={3}>3 Tage</option>
+                  <option value={7}>7 Tage</option>
+                  <option value={14}>14 Tage</option>
+                  <option value={30}>30 Tage</option>
                 </select>
               </div>
 
@@ -84,8 +84,8 @@ export function UploadOptions({ options, onChange }: UploadOptionsProps) {
                 <Toggle
                   checked={usePassword}
                   onChange={(v) => { setUsePassword(v); if (!v) onChange('password', '') }}
-                  label="Password protect"
-                  description="Require a password to download"
+                  label="Passwortschutz"
+                  description="Passwort zum Herunterladen erforderlich"
                 />
                 <AnimatePresence>
                   {usePassword && (
@@ -96,7 +96,7 @@ export function UploadOptions({ options, onChange }: UploadOptionsProps) {
                     >
                       <Input
                         type="password"
-                        placeholder="Enter password"
+                        placeholder="Passwort eingeben"
                         value={options.password}
                         onChange={(e) => onChange('password', e.target.value)}
                         icon={<Lock size={15} />}
@@ -110,8 +110,8 @@ export function UploadOptions({ options, onChange }: UploadOptionsProps) {
                 <Toggle
                   checked={useNotify}
                   onChange={(v) => { setUseNotify(v); if (!v) onChange('notifyEmail', '') }}
-                  label="Email notification"
-                  description="Get notified when downloaded"
+                  label="E-Mail-Benachrichtigung"
+                  description="Benachrichtigung bei Download"
                 />
                 <AnimatePresence>
                   {useNotify && (

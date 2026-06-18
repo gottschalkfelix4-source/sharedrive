@@ -10,10 +10,10 @@ import { Input } from '@/components/ui/Input'
 import toast from 'react-hot-toast'
 
 const steps = [
-  { icon: <Shield size={20} />, label: 'Welcome', desc: 'First-time setup' },
-  { icon: <Globe size={20} />, label: 'Domain', desc: 'Public URL' },
-  { icon: <User size={20} />, label: 'Admin account', desc: 'Create credentials' },
-  { icon: <CheckCircle2 size={20} />, label: 'Done', desc: 'Ready to go' },
+  { icon: <Shield size={20} />, label: 'Willkommen', desc: 'Ersteinrichtung' },
+  { icon: <Globe size={20} />, label: 'Domain', desc: 'Öffentliche URL' },
+  { icon: <User size={20} />, label: 'Admin-Konto', desc: 'Zugangsdaten erstellen' },
+  { icon: <CheckCircle2 size={20} />, label: 'Fertig', desc: 'Bereit' },
 ]
 
 export function SetupPage() {
@@ -30,24 +30,24 @@ export function SetupPage() {
     try {
       const u = new URL(baseUrl)
       if (!['http:', 'https:'].includes(u.protocol)) {
-        setUrlError('Must start with http:// or https://')
+        setUrlError('Muss mit http:// oder https:// beginnen')
         return false
       }
       setUrlError('')
       return true
     } catch {
-      setUrlError('Please enter a valid URL')
+      setUrlError('Bitte eine gültige URL eingeben')
       return false
     }
   }
 
   const validate = () => {
     const e: Record<string, string> = {}
-    if (!form.email.includes('@')) e.email = 'Valid email required'
-    if (form.username.length < 3) e.username = 'Min. 3 characters'
-    if (!/^[a-zA-Z0-9_-]+$/.test(form.username)) e.username = 'Only letters, numbers, - and _'
-    if (form.password.length < 8) e.password = 'Min. 8 characters'
-    if (form.password !== form.confirm) e.confirm = 'Passwords do not match'
+    if (!form.email.includes('@')) e.email = 'Gültige E-Mail erforderlich'
+    if (form.username.length < 3) e.username = 'Mind. 3 Zeichen'
+    if (!/^[a-zA-Z0-9_-]+$/.test(form.username)) e.username = 'Nur Buchstaben, Zahlen, - und _'
+    if (form.password.length < 8) e.password = 'Mind. 8 Zeichen'
+    if (form.password !== form.confirm) e.confirm = 'Passwörter stimmen nicht überein'
     setErrors(e)
     return Object.keys(e).length === 0
   }
@@ -63,7 +63,7 @@ export function SetupPage() {
       setAuth(user, token)
       setStep(3)
     } catch (err: any) {
-      toast.error(err?.response?.data?.error || 'Setup failed')
+      toast.error(err?.response?.data?.error || 'Einrichtung fehlgeschlagen')
     } finally {
       setLoading(false)
     }
@@ -111,12 +111,12 @@ export function SetupPage() {
               <div className="w-16 h-16 rounded-2xl bg-gradient-primary flex items-center justify-center mx-auto mb-4">
                 <Shield size={28} className="text-white" />
               </div>
-              <h1 className="text-2xl font-bold text-text-primary">Welcome to ShareDrive</h1>
+              <h1 className="text-2xl font-bold text-text-primary">Willkommen bei ShareDrive</h1>
               <p className="text-text-muted text-sm mt-3 leading-relaxed">
-                This is your first time running ShareDrive. Let's get you set up in a few steps.
+                ShareDrive wird zum ersten Mal gestartet. Richte es in wenigen Schritten ein.
               </p>
               <div className="mt-6 p-4 bg-primary/5 border border-primary/20 rounded-xl text-left space-y-2">
-                {['Configure your domain', 'Create your admin account', 'Manage users & transfers'].map((item, i) => (
+                {['Domain konfigurieren', 'Admin-Konto erstellen', 'Benutzer & Transfers verwalten'].map((item, i) => (
                   <div key={i} className="flex items-center gap-2 text-sm text-text-secondary">
                     <CheckCircle2 size={14} className="text-primary flex-shrink-0" />
                     {item}
@@ -124,7 +124,7 @@ export function SetupPage() {
                 ))}
               </div>
               <Button className="w-full mt-6" size="lg" icon={<ArrowRight size={17} />} onClick={() => setStep(1)}>
-                Get started
+                Loslegen
               </Button>
             </motion.div>
           )}
@@ -133,21 +133,21 @@ export function SetupPage() {
           {step === 1 && (
             <motion.div key="step1" initial={{ opacity: 0, x: 20 }} animate={{ opacity: 1, x: 0 }} className="p-8">
               <div className="mb-6">
-                <h2 className="text-xl font-bold text-text-primary">Domain configuration</h2>
+                <h2 className="text-xl font-bold text-text-primary">Domain-Konfiguration</h2>
                 <p className="text-text-muted text-sm mt-1">
-                  Set the public URL of your ShareDrive instance. This is used in download links and emails.
+                  Öffentliche URL der ShareDrive-Instanz festlegen. Wird in Download-Links und E-Mails verwendet.
                 </p>
               </div>
 
               <div className="space-y-4">
                 <Input
-                  label="Base URL"
+                  label="Basis-URL"
                   placeholder="https://share.yourdomain.com"
                   value={baseUrl}
                   onChange={(e) => { setBaseUrl(e.target.value); setUrlError('') }}
                   error={urlError}
                   icon={<Globe size={15} />}
-                  hint="No trailing slash. Include https:// for production."
+                  hint="Kein abschließender Schrägstrich. https:// für Produktionsbetrieb verwenden."
                 />
 
                 <button
@@ -156,21 +156,21 @@ export function SetupPage() {
                   className="flex items-center gap-2 text-xs text-primary hover:text-primary/80 transition-colors"
                 >
                   <Wand2 size={13} />
-                  Auto-detect from browser ({window.location.origin})
+                  Automatisch aus Browser ermitteln ({window.location.origin})
                 </button>
 
                 <div className="p-3 bg-amber-500/5 border border-amber-500/20 rounded-xl">
                   <p className="text-xs text-amber-400/80 leading-relaxed">
-                    <span className="font-medium text-amber-400">Behind a reverse proxy?</span> Enter your public domain
-                    (e.g. <code className="bg-white/5 px-1 rounded">https://share.example.com</code>).
-                    No port needed — your proxy handles SSL and forwards to port 80.
+                    <span className="font-medium text-amber-400">Hinter einem Reverse Proxy?</span> Öffentliche Domain eingeben
+                    (z.B. <code className="bg-white/5 px-1 rounded">https://share.example.com</code>).
+                    Kein Port nötig — der Proxy übernimmt SSL und leitet an Port 80 weiter.
                   </p>
                 </div>
               </div>
 
               <div className="flex gap-3 mt-6">
                 <Button variant="secondary" onClick={() => setStep(0)} className="flex-1">
-                  Back
+                  Zurück
                 </Button>
                 <Button
                   className="flex-1"
@@ -178,7 +178,7 @@ export function SetupPage() {
                   icon={<ArrowRight size={17} />}
                   onClick={() => { if (validateUrl()) setStep(2) }}
                 >
-                  Continue
+                  Weiter
                 </Button>
               </div>
             </motion.div>
@@ -188,12 +188,12 @@ export function SetupPage() {
           {step === 2 && (
             <motion.div key="step2" initial={{ opacity: 0, x: 20 }} animate={{ opacity: 1, x: 0 }} className="p-8">
               <div className="mb-6">
-                <h2 className="text-xl font-bold text-text-primary">Create admin account</h2>
-                <p className="text-text-muted text-sm mt-1">This will be the primary administrator account.</p>
+                <h2 className="text-xl font-bold text-text-primary">Admin-Konto erstellen</h2>
+                <p className="text-text-muted text-sm mt-1">Dies wird das primäre Administratorkonto.</p>
               </div>
               <form onSubmit={handleSubmit} className="space-y-4">
                 <Input
-                  label="Email address"
+                  label="E-Mail-Adresse"
                   type="email"
                   placeholder="admin@yourdomain.com"
                   value={form.email}
@@ -202,7 +202,7 @@ export function SetupPage() {
                   icon={<Mail size={15} />}
                 />
                 <Input
-                  label="Username"
+                  label="Benutzername"
                   placeholder="admin"
                   value={form.username}
                   onChange={(e) => setForm({ ...form, username: e.target.value })}
@@ -210,18 +210,18 @@ export function SetupPage() {
                   icon={<User size={15} />}
                 />
                 <Input
-                  label="Password"
+                  label="Passwort"
                   type="password"
-                  placeholder="Min. 8 characters"
+                  placeholder="Mind. 8 Zeichen"
                   value={form.password}
                   onChange={(e) => setForm({ ...form, password: e.target.value })}
                   error={errors.password}
                   icon={<Lock size={15} />}
                 />
                 <Input
-                  label="Confirm password"
+                  label="Passwort bestätigen"
                   type="password"
-                  placeholder="Repeat password"
+                  placeholder="Passwort wiederholen"
                   value={form.confirm}
                   onChange={(e) => setForm({ ...form, confirm: e.target.value })}
                   error={errors.confirm}
@@ -229,10 +229,10 @@ export function SetupPage() {
                 />
                 <div className="flex gap-3">
                   <Button variant="secondary" type="button" onClick={() => setStep(1)} className="flex-1">
-                    Back
+                    Zurück
                   </Button>
                   <Button type="submit" className="flex-1" size="lg" loading={loading} icon={<Shield size={17} />}>
-                    Create account
+                    Konto erstellen
                   </Button>
                 </div>
               </form>
@@ -250,16 +250,16 @@ export function SetupPage() {
               >
                 <CheckCircle2 size={32} className="text-emerald-400" />
               </motion.div>
-              <h2 className="text-xl font-bold text-text-primary">Setup complete!</h2>
+              <h2 className="text-xl font-bold text-text-primary">Einrichtung abgeschlossen!</h2>
               <p className="text-text-muted text-sm mt-2">
-                Your admin account has been created. You're now logged in.
+                Das Admin-Konto wurde erstellt. Du bist jetzt eingeloggt.
               </p>
               <div className="mt-4 p-3 bg-bg-elevated rounded-xl border border-border text-left">
-                <p className="text-xs text-text-muted">Domain configured</p>
+                <p className="text-xs text-text-muted">Domain konfiguriert</p>
                 <p className="text-sm text-primary font-mono mt-0.5">{baseUrl.replace(/\/$/, '')}</p>
               </div>
               <Button className="w-full mt-6" size="lg" icon={<ArrowRight size={17} />} onClick={() => navigate('/admin')}>
-                Go to admin panel
+                Zum Admin-Bereich
               </Button>
             </motion.div>
           )}

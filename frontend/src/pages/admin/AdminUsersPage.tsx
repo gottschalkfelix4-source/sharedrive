@@ -26,9 +26,9 @@ export function AdminUsersPage() {
     mutationFn: ({ id, role }: { id: string; role: 'USER' | 'ADMIN' }) => updateUserRole(id, role),
     onSuccess: () => {
       queryClient.invalidateQueries({ queryKey: ['admin-users'] })
-      toast.success('Role updated')
+      toast.success('Rolle aktualisiert')
     },
-    onError: () => toast.error('Failed to update role'),
+    onError: () => toast.error('Rolle konnte nicht aktualisiert werden'),
   })
 
   const deleteMutation = useMutation({
@@ -36,17 +36,17 @@ export function AdminUsersPage() {
     onSuccess: () => {
       queryClient.invalidateQueries({ queryKey: ['admin-users'] })
       queryClient.invalidateQueries({ queryKey: ['admin-stats'] })
-      toast.success('User deleted')
+      toast.success('Benutzer gelöscht')
       setDeleteId(null)
     },
-    onError: () => toast.error('Failed to delete user'),
+    onError: () => toast.error('Benutzer konnte nicht gelöscht werden'),
   })
 
   return (
     <div className="space-y-6">
       <div>
-        <h1 className="text-2xl font-bold text-text-primary">Users</h1>
-        <p className="text-text-muted text-sm mt-1">{data?.total ?? '…'} registered users</p>
+        <h1 className="text-2xl font-bold text-text-primary">Benutzer</h1>
+        <p className="text-text-muted text-sm mt-1">{data?.total ?? '…'} registrierte Benutzer</p>
       </div>
 
       <div className="bg-bg-card border border-border rounded-2xl overflow-hidden">
@@ -58,12 +58,12 @@ export function AdminUsersPage() {
               <table className="w-full text-sm">
                 <thead>
                   <tr className="border-b border-border text-left">
-                    <th className="px-4 py-3 text-text-muted font-medium">User</th>
-                    <th className="px-4 py-3 text-text-muted font-medium hidden sm:table-cell">Storage</th>
+                    <th className="px-4 py-3 text-text-muted font-medium">Benutzer</th>
+                    <th className="px-4 py-3 text-text-muted font-medium hidden sm:table-cell">Speicher</th>
                     <th className="px-4 py-3 text-text-muted font-medium hidden md:table-cell">Transfers</th>
-                    <th className="px-4 py-3 text-text-muted font-medium hidden lg:table-cell">Joined</th>
-                    <th className="px-4 py-3 text-text-muted font-medium">Role</th>
-                    <th className="px-4 py-3 text-text-muted font-medium text-right">Actions</th>
+                    <th className="px-4 py-3 text-text-muted font-medium hidden lg:table-cell">Beigetreten</th>
+                    <th className="px-4 py-3 text-text-muted font-medium">Rolle</th>
+                    <th className="px-4 py-3 text-text-muted font-medium text-right">Aktionen</th>
                   </tr>
                 </thead>
                 <tbody className="divide-y divide-border">
@@ -126,14 +126,14 @@ export function AdminUsersPage() {
             </div>
 
             <div className="flex items-center justify-between px-4 py-3 border-t border-border">
-              <span className="text-xs text-text-muted">{data?.total ?? 0} total</span>
+              <span className="text-xs text-text-muted">{data?.total ?? 0} gesamt</span>
               <div className="flex items-center gap-2">
                 <Button variant="secondary" size="sm" onClick={() => setPage((p) => p - 1)} disabled={page <= 1}>
-                  Previous
+                  Zurück
                 </Button>
                 <span className="text-sm text-text-muted">{page} / {data?.pages ?? 1}</span>
                 <Button variant="secondary" size="sm" onClick={() => setPage((p) => p + 1)} disabled={page >= (data?.pages ?? 1)}>
-                  Next
+                  Weiter
                 </Button>
               </div>
             </div>
@@ -141,12 +141,12 @@ export function AdminUsersPage() {
         )}
       </div>
 
-      <Modal open={!!deleteId} onClose={() => setDeleteId(null)} title="Delete user">
+      <Modal open={!!deleteId} onClose={() => setDeleteId(null)} title="Benutzer löschen">
         <p className="text-sm text-text-muted mb-6">
-          This will permanently delete the user and all their data. This cannot be undone.
+          Dieser Benutzer und alle Daten werden dauerhaft gelöscht. Dies kann nicht rückgängig gemacht werden.
         </p>
         <div className="flex gap-3">
-          <Button variant="secondary" className="flex-1" onClick={() => setDeleteId(null)}>Cancel</Button>
+          <Button variant="secondary" className="flex-1" onClick={() => setDeleteId(null)}>Abbrechen</Button>
           <Button
             variant="danger"
             className="flex-1"
@@ -154,7 +154,7 @@ export function AdminUsersPage() {
             icon={<Trash2 size={15} />}
             onClick={() => deleteId && deleteMutation.mutate(deleteId)}
           >
-            Delete user
+            Benutzer löschen
           </Button>
         </div>
       </Modal>
