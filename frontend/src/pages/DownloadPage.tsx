@@ -1,20 +1,35 @@
-import { useState } from 'react'
+import { useState, useMemo } from 'react'
 import { useParams } from 'react-router-dom'
 import { useQuery } from '@tanstack/react-query'
 import { motion } from 'framer-motion'
-import { Download, Lock, FileIcon, Archive, Clock, AlertCircle } from 'lucide-react'
+import { Download, Lock, FileIcon, Archive, Clock, AlertCircle, ShieldCheck, ShieldOff } from 'lucide-react'
 import { getTransfer, getDownloadUrl, getZipUrl } from '@/api/transfers'
+import { importKey, decryptToBlob, decryptStream } from '@/lib/e2e'
 import { Button } from '@/components/ui/Button'
 import { Input } from '@/components/ui/Input'
 import { Badge } from '@/components/ui/Badge'
 import { Spinner } from '@/components/ui/Spinner'
 import { formatBytes, formatDate, formatRelative, getFileIcon } from '@/lib/utils'
+import toast from 'react-hot-toast'
+
+// Parse #key=<base64url> from the URL fragment (never sent to the server)
+function useEncryptionKey(): string | null {
+  return useMemo(() => {
+    const hash = window.location.hash.slice(1)
+    return new URLSearchParams(hash).get('key')
+  }, [])
+}
+
+const hasFilePicker = typeof (window as any).showSaveFilePicker === 'function'
 
 export function DownloadPage() {
   const { shortId } = useParams<{ shortId: string }>()
   const [password, setPassword] = useState('')
   const [enteredPassword, setEnteredPassword] = useState<string | undefined>()
   const [passwordError, setPasswordError] = useState('')
+  const [decrypting, setDecrypting] = useState<string | null>(null)  // fileId being decrypted
+
+  const encKeyRaw = useEncryptionKey()
 
   const { data, isLoading, error } = useQuery({
     queryKey: ['transfer', shortId, enteredPassword],
@@ -29,13 +44,47 @@ export function DownloadPage() {
     setEnteredPassword(password)
   }
 
-  const handleDownloadFile = (fileId: string) => {
+  const handleDownloadFile = async (fileId: string, fileName: string, fileSize: string) => {
     const url = getDownloadUrl(shortId!, fileId)
-    const a = document.createElement('a')
-    a.href = enteredPassword
-      ? `${url}?p=${encodeURIComponent(enteredPassword)}`
-      : url
-    // Use header approach via fetch for password-protected files
+    const transfer = data
+
+    // Encrypted transfer with key available — decrypt in browser
+    if (transfer?.encrypted && encKeyRaw) {
+      setDecrypting(fileId)
+      try {
+        const key = await importKey(encKeyRaw)
+        const fetchHeaders: Record<string, string> = { 'Accept': 'application/octet-stream' }
+        if (enteredPassword) fetchHeaders['x-transfer-password'] = enteredPassword
+
+        if (hasFilePicker) {
+          // Streaming decrypt via File System Access API — works for any file size
+          const fileHandle = await (window as any).showSaveFilePicker({ suggestedName: fileName })
+          const writable = await fileHandle.createWritable()
+          const response = await fetch(url, { headers: fetchHeaders })
+          if (!response.ok) throw new Error('Download fehlgeschlagen')
+          await decryptStream(response.body!, key, parseInt(fileSize), writable)
+        } else {
+          // In-memory decrypt — suitable for files up to a few hundred MB
+          const response = await fetch(url, { headers: fetchHeaders })
+          if (!response.ok) throw new Error('Download fehlgeschlagen')
+          const encData = await response.arrayBuffer()
+          const blob = await decryptToBlob(key, encData, parseInt(fileSize))
+          const a = document.createElement('a')
+          a.href = URL.createObjectURL(blob)
+          a.download = fileName
+          a.click()
+          setTimeout(() => URL.revokeObjectURL(a.href), 10_000)
+        }
+      } catch (err: any) {
+        console.error(err)
+        toast.error(err?.message || 'Entschlüsselung fehlgeschlagen')
+      } finally {
+        setDecrypting(null)
+      }
+      return
+    }
+
+    // Regular (unencrypted) download
     window.open(url, '_blank')
   }
 
@@ -71,7 +120,7 @@ export function DownloadPage() {
             <form onSubmit={handlePasswordSubmit} className="space-y-3">
               <Input
                 type="password"
-                placeholder="Password"
+                placeholder="Passwort"
                 value={password}
                 onChange={(e) => setPassword(e.target.value)}
                 error={passwordError}
@@ -105,6 +154,9 @@ export function DownloadPage() {
 
   const transfer = data
   const isExpired = new Date(transfer.expiresAt) < new Date()
+  const isEncrypted = transfer.encrypted
+  const canDecrypt = isEncrypted && !!encKeyRaw
+  const keyMissing = isEncrypted && !encKeyRaw
 
   return (
     <div className="min-h-screen">
@@ -136,14 +188,37 @@ export function DownloadPage() {
               {transfer.downloadCount > 0 && (
                 <Badge variant="info">{transfer.downloadCount} Downloads</Badge>
               )}
+              {canDecrypt && (
+                <Badge variant="info" className="gap-1">
+                  <ShieldCheck size={11} />
+                  E2E verschlüsselt
+                </Badge>
+              )}
             </div>
           </div>
+
+          {/* Missing key warning */}
+          {keyMissing && (
+            <motion.div
+              initial={{ opacity: 0, y: 8 }}
+              animate={{ opacity: 1, y: 0 }}
+              className="mb-4 flex gap-3 rounded-xl border border-amber-500/30 bg-amber-500/10 px-4 py-3 text-sm text-amber-300"
+            >
+              <ShieldOff size={16} className="flex-shrink-0 mt-0.5" />
+              <div>
+                <p className="font-medium">Entschlüsselungsschlüssel fehlt</p>
+                <p className="text-amber-400/80 mt-0.5 text-xs">
+                  Dieser Transfer ist Ende-zu-Ende verschlüsselt. Der Schlüssel muss im vollständigen Link enthalten sein (#key=…). Frage den Absender nach dem kompletten Link.
+                </p>
+              </div>
+            </motion.div>
+          )}
 
           {/* Files */}
           <div className="bg-bg-card border border-border rounded-2xl overflow-hidden mb-4">
             <div className="px-4 py-3 border-b border-border flex items-center justify-between">
               <span className="text-sm font-medium text-text-secondary">Dateien</span>
-              {transfer.files.length > 1 && !isExpired && (
+              {transfer.files.length > 1 && !isExpired && !isEncrypted && (
                 <Button
                   variant="ghost"
                   size="sm"
@@ -169,14 +244,16 @@ export function DownloadPage() {
                     <p className="text-sm font-medium text-text-primary truncate">{file.name}</p>
                     <p className="text-xs text-text-muted">{formatBytes(file.size)}</p>
                   </div>
-                  {!isExpired && (
+                  {!isExpired && !keyMissing && (
                     <Button
                       variant="secondary"
                       size="sm"
-                      icon={<Download size={13} />}
-                      onClick={() => handleDownloadFile(file.id)}
+                      icon={decrypting === file.id ? undefined : <Download size={13} />}
+                      loading={decrypting === file.id}
+                      disabled={decrypting !== null}
+                      onClick={() => handleDownloadFile(file.id, file.name, file.size)}
                     >
-                      Herunterladen
+                      {decrypting === file.id ? 'Entschlüsseln…' : 'Herunterladen'}
                     </Button>
                   )}
                 </motion.div>
@@ -184,15 +261,28 @@ export function DownloadPage() {
             </div>
           </div>
 
-          {!isExpired && (
+          {!isExpired && !keyMissing && (
             <Button
               className="w-full"
               size="lg"
               icon={<Download size={18} />}
-              onClick={transfer.files.length === 1 ? () => handleDownloadFile(transfer.files[0].id) : handleDownloadAll}
+              disabled={decrypting !== null}
+              onClick={
+                transfer.files.length === 1 || isEncrypted
+                  ? () => handleDownloadFile(transfer.files[0].id, transfer.files[0].name, transfer.files[0].size)
+                  : handleDownloadAll
+              }
             >
-              {transfer.files.length === 1 ? 'Datei herunterladen' : 'Alle als ZIP herunterladen'}
+              {transfer.files.length === 1 || isEncrypted
+                ? (isEncrypted ? 'Entschlüsseln & herunterladen' : 'Datei herunterladen')
+                : 'Alle als ZIP herunterladen'}
             </Button>
+          )}
+
+          {canDecrypt && !hasFilePicker && (
+            <p className="text-center text-xs text-text-muted mt-3">
+              Tipp: Chrome/Edge unterstützt direktes Speichern großer Dateien. Bei Firefox/Safari wird die Datei zuerst vollständig im Arbeitsspeicher entschlüsselt.
+            </p>
           )}
 
           <p className="text-center text-xs text-text-muted mt-4">

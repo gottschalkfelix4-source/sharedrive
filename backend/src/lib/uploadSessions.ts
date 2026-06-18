@@ -24,6 +24,7 @@ export interface TransferSession {
     notifyEmail?: string
   }
   maxTransferSizeBytes: number
+  encrypted: boolean
   createdAt: Date
 }
 

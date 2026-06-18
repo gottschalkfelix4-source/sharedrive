@@ -24,6 +24,7 @@ export interface Transfer {
   maxDownloads?: number | null
   totalSize: string
   passwordProtected: boolean
+  encrypted: boolean
   files: FileInfo[]
   expired?: boolean
 }
@@ -33,6 +34,7 @@ export interface TransferUploadResult {
   expiresAt: string
   fileCount: number
   totalSize: string
+  encryptionKey?: string  // base64url AES-256-GCM key, present when encrypted=true
 }
 
 export interface AdminStats {

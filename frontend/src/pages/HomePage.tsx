@@ -19,6 +19,7 @@ const defaultOptions = {
   password: '',
   expiresInDays: 7,
   notifyEmail: '',
+  encrypted: false,
 }
 
 const features = [
@@ -42,7 +43,7 @@ export function HomePage() {
     setFiles((prev) => prev.filter((_, idx) => idx !== i))
   }
 
-  const handleOptionChange = (key: string, value: string | number) => {
+  const handleOptionChange = (key: string, value: string | number | boolean) => {
     setOptions((prev) => ({ ...prev, [key]: value }))
   }
 
@@ -163,6 +164,7 @@ export function HomePage() {
                   expiresAt={result.expiresAt}
                   fileCount={result.fileCount}
                   totalSize={result.totalSize}
+                  encryptionKey={result.encryptionKey}
                   onReset={handleReset}
                 />
               </motion.div>

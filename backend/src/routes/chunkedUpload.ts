@@ -41,7 +41,7 @@ router.post('/init', uploadLimiter, optionalAuth, async (req: Request, res: Resp
       ? parseInt(settings['storage.retentionDaysRegistered'])
       : parseInt(settings['storage.retentionDaysAnonymous'])
 
-    const { title, message, password, expiresInDays, notifyEmail, files } = req.body
+    const { title, message, password, expiresInDays, notifyEmail, files, encrypted } = req.body
 
     if (!Array.isArray(files) || files.length === 0) {
       return res.status(400).json({ error: 'No files provided' })
@@ -95,6 +95,7 @@ router.post('/init', uploadLimiter, optionalAuth, async (req: Request, res: Resp
       files:                new Map(fileSessions),
       meta:                 { title, message, passwordHash, expiresAt, notifyEmail },
       maxTransferSizeBytes,
+      encrypted:            !!encrypted,
       createdAt:            new Date(),
     })
 
@@ -192,6 +193,7 @@ router.post('/:shortId/finalize', async (req: Request, res: Response, next: Next
         expiresAt:    session.meta.expiresAt,
         notifyEmail:  session.meta.notifyEmail,
         totalSize:    BigInt(totalSize),
+        encrypted:    session.encrypted,
         files: {
           create: uploadedFiles.map((f) => ({
             name:       f.name,

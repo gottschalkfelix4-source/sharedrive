@@ -8,6 +8,15 @@ import { AppError } from '../middleware/errorHandler'
 import { sendDownloadNotification } from '../services/email'
 import { log } from '../services/logger'
 
+// Each AES-GCM encrypted chunk adds 12 bytes IV + 16 bytes auth tag overhead
+const ENC_OVERHEAD = 28
+const ENC_CHUNK_SIZE = 8 * 1024 * 1024  // must match frontend CHUNK_SIZE
+
+function encryptedFileSize(plaintextSize: number): number {
+  const numChunks = Math.ceil(plaintextSize / ENC_CHUNK_SIZE)
+  return plaintextSize + numChunks * ENC_OVERHEAD
+}
+
 const router = Router()
 
 async function getTransferOrThrow(shortId: string, password?: string) {
@@ -43,6 +52,7 @@ router.get('/:shortId', async (req, res, next) => {
       maxDownloads: transfer.maxDownloads,
       totalSize: transfer.totalSize.toString(),
       passwordProtected: !!transfer.passwordHash,
+      encrypted: transfer.encrypted,
       files: transfer.files.map((f) => ({
         id: f.id,
         name: f.name,
@@ -114,9 +124,12 @@ router.get('/:shortId/files/:fileId', async (req, res, next) => {
     if (!file) throw new AppError('File not found', 404)
 
     const stream = await getObjectStream(file.storageKey)
+    const contentLength = transfer.encrypted
+      ? encryptedFileSize(Number(file.size))
+      : Number(file.size)
     res.setHeader('Content-Type', file.mimeType || 'application/octet-stream')
     res.setHeader('Content-Disposition', `attachment; filename="${encodeURIComponent(file.name)}"`)
-    res.setHeader('Content-Length', file.size.toString())
+    res.setHeader('Content-Length', String(contentLength))
     stream.pipe(res)
 
     await prisma.transfer.update({

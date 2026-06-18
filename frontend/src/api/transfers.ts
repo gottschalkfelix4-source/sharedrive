@@ -1,5 +1,6 @@
 import { api } from './client'
 import type { Transfer, TransferUploadResult } from '../types'
+import { generateKey, exportKey, encryptChunk, CHUNK_SIZE } from '@/lib/e2e'
 
 export interface UploadOptions {
   title?: string
@@ -7,19 +8,17 @@ export interface UploadOptions {
   password?: string
   expiresInDays?: number
   notifyEmail?: string
+  encrypted?: boolean
   onProgress?: (percent: number, speed: string, eta: string) => void
 }
 
-// ─── Chunked upload (default) ─────────────────────────────────────────────────
-// Files are split into CHUNK_SIZE slices and uploaded in parallel batches.
-// Uses MinIO multipart API on the backend for full streaming + parallelism.
+// ─── Chunked upload ───────────────────────────────────────────────────────────
+// Files are split into CHUNK_SIZE slices and uploaded in parallel.
+// When encrypted=true, each chunk is AES-256-GCM encrypted before sending.
+// The key is returned in the result for embedding in the share URL fragment.
 
-const CHUNK_SIZE  = 8 * 1024 * 1024  // 8 MB — above MinIO's 5 MB minimum part size
-const CONCURRENCY = 6                 // sliding-window slots
+const CONCURRENCY = 6  // sliding-window slots
 
-// Sliding-window scheduler: keeps exactly `limit` requests in-flight at all
-// times. As soon as one slot frees up the next task starts immediately —
-// no gap between batches like Promise.all-in-batches would cause.
 async function withConcurrency(
   count: number,
   fn: (index: number) => Promise<void>,
@@ -39,7 +38,6 @@ async function withConcurrency(
   }
 
   launch()
-  // Wait until all in-flight tasks finish
   while (pending.size > 0) await Promise.race(pending)
 }
 
@@ -47,27 +45,36 @@ export async function uploadTransfer(
   files: File[],
   options: UploadOptions,
 ): Promise<TransferUploadResult> {
-  const startTime  = Date.now()
-  const totalBytes = files.reduce((s, f) => s + f.size, 0)
+  const startTime   = Date.now()
+  const totalBytes  = files.reduce((s, f) => s + f.size, 0)
   let uploadedBytes = 0
 
   const tick = (bytes: number) => {
     uploadedBytes += bytes
     if (!options.onProgress || totalBytes === 0) return
-    const pct    = Math.min(99, Math.round((uploadedBytes / totalBytes) * 100))
+    const pct     = Math.min(99, Math.round((uploadedBytes / totalBytes) * 100))
     const elapsed = (Date.now() - startTime) / 1000 || 0.001
     const speed   = uploadedBytes / elapsed
     const remSec  = speed > 0 ? Math.round((totalBytes - uploadedBytes) / speed) : 0
     options.onProgress(pct, formatBytes(speed) + '/s', remSec + 's')
   }
 
-  // ── 1. Init ─────────────────────────────────────────────────────────────────
+  // Generate encryption key if E2E is requested
+  let encKey: CryptoKey | undefined
+  let encKeyExported: string | undefined
+  if (options.encrypted) {
+    encKey = await generateKey()
+    encKeyExported = await exportKey(encKey)
+  }
+
+  // ── 1. Init ──────────────────────────────────────────────────────────────────
   const initRes = await api.post('/transfers/chunked/init', {
     title:         options.title        || undefined,
     message:       options.message      || undefined,
     password:      options.password     || undefined,
     expiresInDays: options.expiresInDays,
     notifyEmail:   options.notifyEmail  || undefined,
+    encrypted:     !!options.encrypted,
     files: files.map((f) => ({
       name:     f.name,
       size:     f.size,
@@ -77,7 +84,7 @@ export async function uploadTransfer(
 
   const { shortId, fileTokens } = initRes.data as { shortId: string; fileTokens: string[] }
 
-  // ── 2. Stream chunks with sliding-window concurrency ────────────────────────
+  // ── 2. Stream chunks with sliding-window concurrency ─────────────────────────
   try {
     for (let fi = 0; fi < files.length; fi++) {
       const file      = files[fi]
@@ -88,8 +95,17 @@ export async function uploadTransfer(
         const start = idx * CHUNK_SIZE
         const end   = Math.min(start + CHUNK_SIZE, file.size)
 
-        // Send Blob directly — no ArrayBuffer copy, Axios streams it as-is
-        await api.put(`/transfers/chunked/${shortId}/part`, file.slice(start, end), {
+        let body: Blob | Uint8Array
+        if (encKey) {
+          // Read slice into memory, encrypt, send encrypted bytes
+          const buf = await file.slice(start, end).arrayBuffer()
+          body = await encryptChunk(encKey, new Uint8Array(buf))
+        } else {
+          // Stream Blob directly — zero-copy
+          body = file.slice(start, end)
+        }
+
+        await api.put(`/transfers/chunked/${shortId}/part`, body, {
           headers: {
             'Content-Type':  'application/octet-stream',
             'x-file-token':  fileToken,
@@ -106,10 +122,11 @@ export async function uploadTransfer(
     throw err
   }
 
-  // ── 3. Finalize ──────────────────────────────────────────────────────────────
+  // ── 3. Finalize ───────────────────────────────────────────────────────────────
   const finalRes = await api.post(`/transfers/chunked/${shortId}/finalize`)
   options.onProgress?.(100, '—', '0s')
-  return finalRes.data
+
+  return { ...finalRes.data, encryptionKey: encKeyExported }
 }
 
 export async function getTransfer(shortId: string, password?: string): Promise<any> {

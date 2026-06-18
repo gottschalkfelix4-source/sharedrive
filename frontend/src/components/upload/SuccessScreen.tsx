@@ -1,7 +1,8 @@
 import { useState } from 'react'
 import { motion } from 'framer-motion'
-import { Copy, Check, ExternalLink, RotateCcw } from 'lucide-react'
+import { Copy, Check, ExternalLink, RotateCcw, ShieldCheck } from 'lucide-react'
 import { Button } from '@/components/ui/Button'
+import { Badge } from '@/components/ui/Badge'
 import { formatBytes, formatRelative, copyToClipboard } from '@/lib/utils'
 
 interface SuccessScreenProps {
@@ -9,12 +10,16 @@ interface SuccessScreenProps {
   expiresAt: string
   fileCount: number
   totalSize: string
+  encryptionKey?: string
   onReset: () => void
 }
 
-export function SuccessScreen({ shortId, expiresAt, fileCount, totalSize, onReset }: SuccessScreenProps) {
+export function SuccessScreen({ shortId, expiresAt, fileCount, totalSize, encryptionKey, onReset }: SuccessScreenProps) {
   const [copied, setCopied] = useState(false)
-  const url = `${window.location.origin}/d/${shortId}`
+  // If E2E encrypted, embed the key in the URL fragment (never sent to server)
+  const url = encryptionKey
+    ? `${window.location.origin}/d/${shortId}#key=${encryptionKey}`
+    : `${window.location.origin}/d/${shortId}`
 
   const handleCopy = async () => {
     await copyToClipboard(url)
@@ -50,6 +55,14 @@ export function SuccessScreen({ shortId, expiresAt, fileCount, totalSize, onRese
         <p className="text-text-muted mt-1">
           {fileCount} Datei{fileCount > 1 ? 'en' : ''} · {formatBytes(totalSize)} · läuft ab {formatRelative(expiresAt)}
         </p>
+        {encryptionKey && (
+          <div className="flex justify-center mt-2">
+            <Badge variant="info" className="gap-1.5">
+              <ShieldCheck size={11} />
+              Ende-zu-Ende verschlüsselt
+            </Badge>
+          </div>
+        )}
       </div>
 
       {/* URL box */}
