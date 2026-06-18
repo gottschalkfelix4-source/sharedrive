@@ -4,6 +4,7 @@ import { motion } from 'framer-motion'
 import { Link } from 'react-router-dom'
 import { ExternalLink, Trash2, Download, Clock, HardDrive, Upload } from 'lucide-react'
 import { getMyTransfers, deleteTransfer } from '@/api/transfers'
+import { getPublicSettings } from '@/api/settings'
 import { useAuthStore } from '@/store/authStore'
 import { Button } from '@/components/ui/Button'
 import { Badge } from '@/components/ui/Badge'
@@ -23,6 +24,12 @@ export function DashboardPage() {
     queryKey: ['my-transfers', page],
     queryFn: () => getMyTransfers(page),
     enabled: !!user,
+  })
+
+  const { data: publicSettings } = useQuery({
+    queryKey: ['public-settings'],
+    queryFn: getPublicSettings,
+    staleTime: 60_000,
   })
 
   const deleteMutation = useMutation({
@@ -52,11 +59,38 @@ export function DashboardPage() {
 
         {/* Stats */}
         <div className="grid grid-cols-2 sm:grid-cols-3 gap-4 mb-8">
-          <StatCard
-            title="Speicher genutzt"
-            value={formatBytes(user?.storageUsed || '0')}
-            icon={<HardDrive size={20} />}
-          />
+          {(() => {
+            const quota = publicSettings?.userStorageQuotaBytes ?? 0
+            const used = parseInt(user?.storageUsed || '0')
+            if (quota > 0) {
+              const pct = Math.min(100, Math.round((used / quota) * 100))
+              const barColor = pct >= 90 ? 'bg-red-500' : pct >= 70 ? 'bg-amber-500' : 'bg-primary'
+              return (
+                <Card className="p-6">
+                  <div className="flex items-start justify-between mb-3">
+                    <div>
+                      <p className="text-sm text-text-secondary">Speicher genutzt</p>
+                      <p className="text-2xl font-bold text-text-primary mt-1">{pct}%</p>
+                    </div>
+                    <div className="p-3 rounded-xl bg-white/5 text-primary"><HardDrive size={20} /></div>
+                  </div>
+                  <div className="h-1.5 bg-border rounded-full overflow-hidden">
+                    <div
+                      className={`h-full rounded-full transition-[width] duration-500 ${barColor}`}
+                      style={{ width: `${pct}%` }}
+                    />
+                  </div>
+                </Card>
+              )
+            }
+            return (
+              <StatCard
+                title="Speicher genutzt"
+                value={formatBytes(user?.storageUsed || '0')}
+                icon={<HardDrive size={20} />}
+              />
+            )
+          })()}
           <StatCard
             title="Transfers gesamt"
             value={data?.total ?? '…'}

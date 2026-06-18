@@ -80,6 +80,7 @@ export interface PublicSettings {
   registrationEnabled: boolean
   maxFileSizeBytes: number
   maxTransferSizeBytes: number
+  userStorageQuotaBytes: number
 }
 
 export interface AllSettings {

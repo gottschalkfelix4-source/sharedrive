@@ -17,6 +17,7 @@ export function StorageSettings() {
   const [form, setForm] = useState({
     maxFileSizeGB: '5',
     maxTransferSizeGB: '10',
+    userStorageQuotaGB: '0',
     retentionAnonymous: '7',
     retentionRegistered: '30',
   })
@@ -26,6 +27,7 @@ export function StorageSettings() {
       setForm({
         maxFileSizeGB: bytesToGB(settings['storage.maxFileSizeBytes'] || '5368709120'),
         maxTransferSizeGB: bytesToGB(settings['storage.maxTransferSizeBytes'] || '10737418240'),
+        userStorageQuotaGB: bytesToGB(settings['storage.userStorageQuotaBytes'] || '0'),
         retentionAnonymous: settings['storage.retentionDaysAnonymous'] || '7',
         retentionRegistered: settings['storage.retentionDaysRegistered'] || '30',
       })
@@ -37,6 +39,7 @@ export function StorageSettings() {
       updateSettings({
         'storage.maxFileSizeBytes': gbToBytes(f.maxFileSizeGB),
         'storage.maxTransferSizeBytes': gbToBytes(f.maxTransferSizeGB),
+        'storage.userStorageQuotaBytes': gbToBytes(f.userStorageQuotaGB),
         'storage.retentionDaysAnonymous': f.retentionAnonymous,
         'storage.retentionDaysRegistered': f.retentionRegistered,
       }),
@@ -77,6 +80,20 @@ export function StorageSettings() {
             value={form.maxTransferSizeGB}
             onChange={(e) => setForm({ ...form, maxTransferSizeGB: e.target.value })}
             hint={`≈ ${formatBytes(gbToBytes(form.maxTransferSizeGB))} gesamt`}
+          />
+        </div>
+
+        <div>
+          <h3 className="text-sm font-semibold text-text-primary mb-1">Speicherquota pro Nutzer</h3>
+          <p className="text-xs text-text-muted mb-3">Wird im Dashboard als Prozentbalken angezeigt. 0 = kein Limit (kein Balken).</p>
+          <Input
+            label="Quota pro Nutzer (GB)"
+            type="number"
+            min="0"
+            step="1"
+            value={form.userStorageQuotaGB}
+            onChange={(e) => setForm({ ...form, userStorageQuotaGB: e.target.value })}
+            hint={parseFloat(form.userStorageQuotaGB) > 0 ? `≈ ${formatBytes(gbToBytes(form.userStorageQuotaGB))} pro Nutzer` : 'Kein Limit — kein Prozentbalken im Dashboard'}
           />
         </div>
 

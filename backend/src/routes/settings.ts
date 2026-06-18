@@ -12,6 +12,7 @@ export const DEFAULT_SETTINGS: Record<string, string> = {
   'app.maxFilesPerTransfer': '100',
   'storage.maxFileSizeBytes': '5368709120',
   'storage.maxTransferSizeBytes': '10737418240',
+  'storage.userStorageQuotaBytes': '0',
   'storage.retentionDaysAnonymous': '7',
   'storage.retentionDaysRegistered': '30',
   'email.enabled': 'false',
@@ -97,6 +98,7 @@ router.get('/public', async (req, res, next) => {
       registrationEnabled: settings['security.registrationEnabled'] === 'true',
       maxFileSizeBytes: parseInt(settings['storage.maxFileSizeBytes']),
       maxTransferSizeBytes: parseInt(settings['storage.maxTransferSizeBytes']),
+      userStorageQuotaBytes: parseInt(settings['storage.userStorageQuotaBytes'] || '0'),
     })
   } catch (err) {
     next(err)
