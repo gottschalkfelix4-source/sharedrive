@@ -1,6 +1,6 @@
 import { useState } from 'react'
 import { motion, AnimatePresence } from 'framer-motion'
-import { Shield, Zap, Globe, ArrowRight, ShieldCheck, HardDrive } from 'lucide-react'
+import { Shield, Zap, Globe, ArrowRight, ShieldCheck, HardDrive, AlertCircle } from 'lucide-react'
 import { useQuery } from '@tanstack/react-query'
 import { UploadZone } from '@/components/upload/UploadZone'
 import { UploadOptions } from '@/components/upload/UploadOptions'
@@ -13,7 +13,6 @@ import { LockAnimation } from '@/components/effects/LockAnimation'
 import { Toggle } from '@/components/ui/Toggle'
 import { uploadTransfer, type UploadOptions as UOpts } from '@/api/transfers'
 import { getDiskStats } from '@/api/settings'
-import { useAuthStore } from '@/store/authStore'
 import toast from 'react-hot-toast'
 
 type Phase = 'idle' | 'uploading' | 'success'
@@ -33,14 +32,28 @@ const features = [
   { icon: <Globe size={20} />, title: 'Überall teilen', desc: 'Einfacher Link, kein Konto nötig' },
 ]
 
+function formatTimeUntil(iso: string): string {
+  const diff = new Date(iso).getTime() - Date.now()
+  if (diff <= 0) return 'gleich'
+  const totalMinutes = Math.floor(diff / 60_000)
+  const days = Math.floor(totalMinutes / 1440)
+  const hours = Math.floor((totalMinutes % 1440) / 60)
+  const minutes = totalMinutes % 60
+  if (days > 0 && hours > 0) return `in ${days} Tag${days > 1 ? 'en' : ''} und ${hours} Stunde${hours > 1 ? 'n' : ''}`
+  if (days > 0) return `in ${days} Tag${days > 1 ? 'en' : ''}`
+  if (hours > 0 && minutes > 0) return `in ${hours} Stunde${hours > 1 ? 'n' : ''} und ${minutes} Minute${minutes > 1 ? 'n' : ''}`
+  if (hours > 0) return `in ${hours} Stunde${hours > 1 ? 'n' : ''}`
+  return `in ${minutes} Minute${minutes !== 1 ? 'n' : ''}`
+}
+
 export function HomePage() {
-  const { user } = useAuthStore()
   const { data: diskStats } = useQuery({
     queryKey: ['disk-stats'],
     queryFn: getDiskStats,
-    enabled: !!user,
     staleTime: 30_000,
   })
+
+  const diskFull = (diskStats?.pct ?? 0) >= 95
 
   const [files, setFiles] = useState<File[]>([])
   const [options, setOptions] = useState(defaultOptions)
@@ -135,6 +148,24 @@ export function HomePage() {
                 exit={{ opacity: 0 }}
                 className="space-y-4"
               >
+                {diskFull && (
+                  <motion.div
+                    initial={{ opacity: 0, y: -8 }}
+                    animate={{ opacity: 1, y: 0 }}
+                    className="flex gap-3 rounded-xl border border-red-500/30 bg-red-500/10 px-4 py-3 text-sm text-red-300"
+                  >
+                    <AlertCircle size={16} className="flex-shrink-0 mt-0.5" />
+                    <div>
+                      <p className="font-medium">Kein Speicherplatz verfügbar</p>
+                      <p className="text-red-400/80 mt-0.5 text-xs">
+                        {diskStats?.nextExpiryAt
+                          ? `Uploads sind derzeit nicht möglich. Nächste Dateien werden ${formatTimeUntil(diskStats.nextExpiryAt)} automatisch gelöscht und geben Speicher frei.`
+                          : 'Uploads sind derzeit nicht möglich. Bitte wende dich an den Administrator.'}
+                      </p>
+                    </div>
+                  </motion.div>
+                )}
+
                 <UploadZone
                   files={files}
                   onFilesAdded={handleFilesAdded}
@@ -168,6 +199,7 @@ export function HomePage() {
                       className="w-full"
                       size="lg"
                       icon={<ArrowRight size={18} />}
+                      disabled={diskFull}
                       onClick={handleUpload}
                     >
                       Hochladen & Link erhalten
@@ -221,7 +253,7 @@ export function HomePage() {
           ))}
         </motion.div>
 
-        {/* Server disk usage — only for logged-in users */}
+        {/* Server disk usage */}
         {diskStats && (
           <motion.div
             initial={{ opacity: 0 }}

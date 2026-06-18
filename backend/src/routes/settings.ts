@@ -118,14 +118,22 @@ router.get('/legal', async (req, res, next) => {
   }
 })
 
-router.get('/disk-stats', requireAuth, (req, res, next) => {
+router.get('/disk-stats', async (req, res, next) => {
   try {
     const stats = fs.statfsSync('/')
     const total = stats.blocks * stats.bsize
     const free = stats.bfree * stats.bsize
     const used = total - free
     const pct = Math.round((used / total) * 100)
-    res.json({ total, used, free, pct })
+
+    // Next expiring active transfer — tells users when space will be freed
+    const next = await prisma.transfer.findFirst({
+      where: { expiresAt: { gt: new Date() } },
+      orderBy: { expiresAt: 'asc' },
+      select: { expiresAt: true },
+    })
+
+    res.json({ total, used, free, pct, nextExpiryAt: next?.expiresAt ?? null })
   } catch (err) {
     next(err)
   }
