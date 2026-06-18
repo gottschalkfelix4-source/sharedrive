@@ -21,7 +21,7 @@ function buildCaddyfile(domain: string, acmeEmail?: string): string {
   return [
     '{',
     '    admin 0.0.0.0:2019 {',
-    '        origins localhost caddy:2019',
+    '        origins http://localhost http://caddy:2019',
     '    }',
     emailLine ? emailLine.trimEnd() : '',
     '}',
