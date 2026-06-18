@@ -1,0 +1,39 @@
+# Extends docker-compose.yml with automatic HTTPS via Caddy + Let's Encrypt.
+# Requires Docker Compose v2 (docker compose) and DOMAIN set in .env.
+#
+# Usage:
+#   docker compose -f docker-compose.yml -f docker-compose.ssl.yml up -d
+#
+# Required in .env:
+#   DOMAIN=share.example.com
+# Optional:
+#   ACME_EMAIL=admin@example.com
+
+services:
+  nginx:
+    # Remove direct port exposure — Caddy handles 80/443 externally
+    ports: !reset []
+
+  caddy:
+    image: caddy:alpine
+    container_name: sharedrive-caddy
+    ports:
+      - "80:80"
+      - "443:443"
+      - "443:443/udp"
+    volumes:
+      - ./Caddyfile:/etc/caddy/Caddyfile:ro
+      - caddy_data:/data
+      - caddy_config:/config
+    environment:
+      DOMAIN: ${DOMAIN:?Set DOMAIN=your-domain.com in .env for SSL mode}
+      ACME_EMAIL: ${ACME_EMAIL:-}
+    depends_on:
+      - nginx
+    restart: unless-stopped
+    networks:
+      - sharedrive-net
+
+volumes:
+  caddy_data:
+  caddy_config:

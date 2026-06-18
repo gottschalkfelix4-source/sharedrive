@@ -1,12 +1,13 @@
 import { useState } from 'react'
 import { useNavigate } from 'react-router-dom'
 import { motion } from 'framer-motion'
-import { Shield, Mail, User, Lock, ArrowRight, CheckCircle2, Globe, Wand2 } from 'lucide-react'
+import { Shield, Mail, User, Lock, ArrowRight, CheckCircle2, Globe, Wand2, ShieldCheck, Copy } from 'lucide-react'
 import { runSetup } from '@/api/setup'
 import { login } from '@/api/auth'
 import { useAuthStore } from '@/store/authStore'
 import { Button } from '@/components/ui/Button'
 import { Input } from '@/components/ui/Input'
+import { Toggle } from '@/components/ui/Toggle'
 import toast from 'react-hot-toast'
 
 const steps = [
@@ -22,6 +23,8 @@ export function SetupPage() {
   const [step, setStep] = useState<0 | 1 | 2 | 3>(0)
   const [baseUrl, setBaseUrl] = useState(() => window.location.origin)
   const [urlError, setUrlError] = useState('')
+  const [sslEnabled, setSslEnabled] = useState(false)
+  const [acmeEmail, setAcmeEmail] = useState('')
   const [form, setForm] = useState({ email: '', username: '', password: '', confirm: '' })
   const [loading, setLoading] = useState(false)
   const [errors, setErrors] = useState<Record<string, string>>({})
@@ -159,12 +162,53 @@ export function SetupPage() {
                   Automatisch aus Browser ermitteln ({window.location.origin})
                 </button>
 
-                <div className="p-3 bg-amber-500/5 border border-amber-500/20 rounded-xl">
-                  <p className="text-xs text-amber-400/80 leading-relaxed">
-                    <span className="font-medium text-amber-400">Hinter einem Reverse Proxy?</span> Öffentliche Domain eingeben
-                    (z.B. <code className="bg-white/5 px-1 rounded">https://share.example.com</code>).
-                    Kein Port nötig — der Proxy übernimmt SSL und leitet an Port 80 weiter.
-                  </p>
+                {/* Auto-SSL section */}
+                <div className="border border-border rounded-xl overflow-hidden">
+                  <div className="flex items-center justify-between gap-4 px-4 py-3 bg-bg-elevated">
+                    <div>
+                      <p className="text-sm font-medium text-text-primary flex items-center gap-1.5">
+                        <ShieldCheck size={14} className="text-violet-400" />
+                        Automatisches HTTPS (Let's Encrypt)
+                      </p>
+                      <p className="text-xs text-text-muted mt-0.5">Kostenlos, automatisch erneuert — kein Reverse Proxy nötig</p>
+                    </div>
+                    <Toggle
+                      checked={sslEnabled}
+                      onChange={(v) => {
+                        setSslEnabled(v)
+                        if (v && baseUrl.startsWith('http://')) {
+                          setBaseUrl(baseUrl.replace('http://', 'https://'))
+                        }
+                      }}
+                    />
+                  </div>
+
+                  {sslEnabled && (
+                    <div className="px-4 pb-4 pt-3 border-t border-border space-y-3">
+                      <Input
+                        label="E-Mail für Let's Encrypt (optional)"
+                        type="email"
+                        placeholder="admin@yourdomain.com"
+                        value={acmeEmail}
+                        onChange={(e) => setAcmeEmail(e.target.value)}
+                        icon={<Mail size={15} />}
+                        hint="Wird nur für Zertifikats-Ablaufbenachrichtigungen verwendet."
+                      />
+                      <div className="p-3 bg-violet-500/5 border border-violet-500/20 rounded-xl space-y-1.5">
+                        <p className="text-xs font-medium text-violet-300">Voraussetzungen</p>
+                        {[
+                          'Domain zeigt auf die IP dieses Servers (A-Record)',
+                          'Port 80 und 443 am VPS geöffnet',
+                          'Kein anderer Dienst auf Port 80/443',
+                        ].map((req, i) => (
+                          <div key={i} className="flex items-start gap-1.5 text-xs text-text-muted">
+                            <CheckCircle2 size={11} className="text-violet-400 mt-0.5 flex-shrink-0" />
+                            {req}
+                          </div>
+                        ))}
+                      </div>
+                    </div>
+                  )}
                 </div>
               </div>
 
@@ -258,6 +302,37 @@ export function SetupPage() {
                 <p className="text-xs text-text-muted">Domain konfiguriert</p>
                 <p className="text-sm text-primary font-mono mt-0.5">{baseUrl.replace(/\/$/, '')}</p>
               </div>
+
+              {sslEnabled && (() => {
+                const domain = (() => { try { return new URL(baseUrl).hostname } catch { return baseUrl } })()
+                const envLine = `DOMAIN=${domain}${acmeEmail ? `\nACME_EMAIL=${acmeEmail}` : ''}`
+                const cmd = `docker compose -f docker-compose.yml -f docker-compose.ssl.yml up -d`
+                return (
+                  <div className="mt-4 text-left space-y-2">
+                    <p className="text-xs font-medium text-violet-300 flex items-center gap-1.5">
+                      <ShieldCheck size={13} />
+                      SSL aktivieren — Startbefehl für den VPS:
+                    </p>
+                    <div className="relative">
+                      <pre className="text-xs text-text-secondary bg-bg rounded-xl border border-border p-3 font-mono overflow-x-auto whitespace-pre-wrap break-all leading-relaxed">
+{`# In .env hinzufügen:
+${envLine}
+
+# Dann starten mit:
+${cmd}`}
+                      </pre>
+                      <button
+                        onClick={() => { navigator.clipboard.writeText(`# .env\n${envLine}\n\n${cmd}`); toast.success('Kopiert!') }}
+                        className="absolute top-2 right-2 p-1.5 rounded-lg bg-white/5 hover:bg-white/10 text-text-muted hover:text-text-primary transition-colors"
+                      >
+                        <Copy size={13} />
+                      </button>
+                    </div>
+                    <p className="text-xs text-text-muted">Caddy holt das SSL-Zertifikat beim ersten Start automatisch.</p>
+                  </div>
+                )
+              })()}
+
               <Button className="w-full mt-6" size="lg" icon={<ArrowRight size={17} />} onClick={() => navigate('/admin')}>
                 Zum Admin-Bereich
               </Button>
