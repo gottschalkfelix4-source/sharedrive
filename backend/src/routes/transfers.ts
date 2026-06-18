@@ -8,6 +8,7 @@ import { uploadStream, deleteObjects } from '../lib/minio'
 import { requireAuth, optionalAuth } from '../middleware/auth'
 import { AppError } from '../middleware/errorHandler'
 import { getSettings } from './settings'
+import { log } from '../services/logger'
 import rateLimit from 'express-rate-limit'
 
 const router = Router()
@@ -139,6 +140,13 @@ router.post('/', uploadLimiter, optionalAuth, (req: Request, res: Response) => {
           })
         }
 
+        await log('info', 'upload', `Transfer uploaded: ${transfer.shortId} — ${transfer.files.length} file(s), ${(totalSize / 1024 / 1024).toFixed(1)} MB`, {
+          userId: userId ?? undefined,
+          ip: req.ip,
+          fileCount: transfer.files.length,
+          totalSizeBytes: totalSize,
+        })
+
         res.status(201).json({
           shortId: transfer.shortId,
           expiresAt: transfer.expiresAt,
@@ -146,6 +154,7 @@ router.post('/', uploadLimiter, optionalAuth, (req: Request, res: Response) => {
           totalSize: totalSize.toString(),
         })
       } catch (err) {
+        await log('error', 'upload', `Upload failed: ${(err as Error).message}`, { ip: req.ip })
         console.error('Transfer creation error:', err)
         if (!res.headersSent) res.status(500).json({ error: 'Upload failed' })
       }

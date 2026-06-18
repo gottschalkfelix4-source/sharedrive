@@ -82,3 +82,18 @@ model Setting {
   value     String
   updatedAt DateTime @updatedAt
 }
+
+model Log {
+  id        Int      @id @default(autoincrement())
+  createdAt DateTime @default(now())
+  level     String   // info | warn | error
+  category  String   // upload | auth | download | system | error
+  message   String
+  ip        String?
+  userId    String?
+  meta      Json?
+
+  @@index([createdAt(sort: Desc)])
+  @@index([level])
+  @@index([category])
+}

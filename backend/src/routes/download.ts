@@ -6,6 +6,7 @@ import { prisma } from '../lib/prisma'
 import { getObjectStream } from '../lib/minio'
 import { AppError } from '../middleware/errorHandler'
 import { sendDownloadNotification } from '../services/email'
+import { log } from '../services/logger'
 
 const router = Router()
 
@@ -91,6 +92,8 @@ router.get('/:shortId/zip', async (req, res, next) => {
       },
     })
 
+    await log('info', 'download', `ZIP downloaded: ${transfer.shortId}`, { ip: req.ip })
+
     if (transfer.notifyEmail) {
       sendDownloadNotification(transfer.notifyEmail, transfer.shortId, transfer.title).catch(
         console.error
@@ -124,6 +127,8 @@ router.get('/:shortId/files/:fileId', async (req, res, next) => {
     await prisma.downloadLog.create({
       data: { transferId: transfer.id, ip: req.ip, userAgent: req.headers['user-agent'] },
     })
+
+    await log('info', 'download', `File downloaded: ${transfer.shortId}`, { ip: req.ip })
 
     if (transfer.notifyEmail) {
       sendDownloadNotification(transfer.notifyEmail, transfer.shortId, transfer.title).catch(console.error)

@@ -1,6 +1,17 @@
 import { api } from './client'
 import type { AdminStats, AdminTransferRow, AdminUser } from '../types'
 
+export interface LogEntry {
+  id: number
+  createdAt: string
+  level: 'info' | 'warn' | 'error'
+  category: string
+  message: string
+  ip?: string
+  userId?: string
+  meta?: Record<string, unknown>
+}
+
 export async function getAdminStats(): Promise<AdminStats> {
   const res = await api.get('/admin/stats')
   return res.data
@@ -33,4 +44,18 @@ export async function updateUserRole(id: string, role: 'USER' | 'ADMIN'): Promis
 
 export async function deleteUser(id: string): Promise<void> {
   await api.delete(`/admin/users/${id}`)
+}
+
+export async function getLogs(params: {
+  page?: number
+  level?: string
+  category?: string
+  search?: string
+}): Promise<{ logs: LogEntry[]; total: number; pages: number }> {
+  const p = new URLSearchParams({ page: String(params.page ?? 1) })
+  if (params.level) p.set('level', params.level)
+  if (params.category) p.set('category', params.category)
+  if (params.search) p.set('search', params.search)
+  const res = await api.get(`/admin/logs?${p}`)
+  return res.data
 }

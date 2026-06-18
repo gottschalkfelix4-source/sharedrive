@@ -213,6 +213,37 @@ router.put('/users/:id', async (req, res, next) => {
   }
 })
 
+// List logs
+router.get('/logs', async (req, res, next) => {
+  try {
+    const page = parseInt(req.query.page as string) || 1
+    const limit = 50
+    const skip = (page - 1) * limit
+    const level = req.query.level as string | undefined
+    const category = req.query.category as string | undefined
+    const search = req.query.search as string | undefined
+
+    const where: any = {}
+    if (level && level !== 'all') where.level = level
+    if (category && category !== 'all') where.category = category
+    if (search) where.message = { contains: search, mode: 'insensitive' }
+
+    const [logs, total] = await Promise.all([
+      prisma.log.findMany({
+        where,
+        orderBy: { createdAt: 'desc' },
+        skip,
+        take: limit,
+      }),
+      prisma.log.count({ where }),
+    ])
+
+    res.json({ logs, total, page, pages: Math.ceil(total / limit) })
+  } catch (err) {
+    next(err)
+  }
+})
+
 // Delete user
 router.delete('/users/:id', async (req, res, next) => {
   try {

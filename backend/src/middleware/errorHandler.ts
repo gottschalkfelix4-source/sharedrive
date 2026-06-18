@@ -16,5 +16,9 @@ export function errorHandler(err: Error, req: Request, res: Response, next: Next
     return
   }
   console.error('Unhandled error:', err)
+  // Log unexpected errors asynchronously — import lazily to avoid circular deps
+  import('../services/logger').then(({ log }) => {
+    log('error', 'error', `${req.method} ${req.path} — ${err.message}`, { ip: req.ip }).catch(() => {})
+  }).catch(() => {})
   res.status(500).json({ error: 'Internal server error' })
 }

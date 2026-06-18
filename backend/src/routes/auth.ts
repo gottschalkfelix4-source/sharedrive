@@ -10,6 +10,7 @@ import { requireAuth } from '../middleware/auth'
 import { AppError } from '../middleware/errorHandler'
 import { getSetting } from './settings'
 import { sendVerificationEmail } from '../services/email'
+import { log } from '../services/logger'
 
 const router = Router()
 
@@ -78,6 +79,7 @@ router.post('/register', authLimiter, async (req, res, next) => {
         },
       })
 
+      await log('info', 'auth', `User registered (pending verification): ${email}`, { ip: req.ip })
       return res.status(202).json({ needsVerification: true })
     }
 
@@ -85,6 +87,7 @@ router.post('/register', authLimiter, async (req, res, next) => {
       data: { email, username, password: passwordHash, emailVerified: true },
     })
 
+    await log('info', 'auth', `User registered: ${username}`, { userId: user.id, ip: req.ip })
     const token = signToken(user)
     res.status(201).json({
       token,
@@ -100,16 +103,23 @@ router.post('/login', authLimiter, async (req, res, next) => {
     const { email, password } = loginSchema.parse(req.body)
 
     const user = await prisma.user.findUnique({ where: { email } })
-    if (!user) throw new AppError('Invalid credentials', 401)
+    if (!user) {
+      await log('warn', 'auth', `Failed login attempt (unknown email): ${email}`, { ip: req.ip })
+      throw new AppError('Invalid credentials', 401)
+    }
 
     const valid = await bcrypt.compare(password, user.password)
-    if (!valid) throw new AppError('Invalid credentials', 401)
+    if (!valid) {
+      await log('warn', 'auth', `Failed login attempt (wrong password): ${email}`, { userId: user.id, ip: req.ip })
+      throw new AppError('Invalid credentials', 401)
+    }
 
     const requireVerification = await getSetting('security.requireEmailVerification')
     if (requireVerification === 'true' && !user.emailVerified) {
       throw new AppError('Please verify your email address before logging in', 403)
     }
 
+    await log('info', 'auth', `User logged in: ${user.username}`, { userId: user.id, ip: req.ip })
     const token = signToken(user)
     res.json({
       token,

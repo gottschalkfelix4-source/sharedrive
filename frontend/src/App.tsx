@@ -12,6 +12,7 @@ import { AdminLayout } from '@/pages/admin/AdminLayout'
 import { AdminDashboardPage } from '@/pages/admin/AdminDashboardPage'
 import { AdminFilesPage } from '@/pages/admin/AdminFilesPage'
 import { AdminUsersPage } from '@/pages/admin/AdminUsersPage'
+import { AdminLogsPage } from '@/pages/admin/AdminLogsPage'
 import { SettingsLayout } from '@/pages/admin/settings/SettingsLayout'
 import { GeneralSettings } from '@/pages/admin/settings/GeneralSettings'
 import { StorageSettings } from '@/pages/admin/settings/StorageSettings'
@@ -108,6 +109,7 @@ export default function App() {
           <Route index element={<AdminDashboardPage />} />
           <Route path="files" element={<AdminFilesPage />} />
           <Route path="users" element={<AdminUsersPage />} />
+          <Route path="logs" element={<AdminLogsPage />} />
           <Route path="settings" element={<SettingsLayout />}>
             <Route index element={<GeneralSettings />} />
             <Route path="storage" element={<StorageSettings />} />

@@ -13,6 +13,7 @@ import { errorHandler } from './middleware/errorHandler'
 import { startCleanupService } from './services/cleanup'
 import { seedSettings } from './services/seed'
 import { ensureBucket } from './lib/minio'
+import { log } from './services/logger'
 import { config } from './config'
 
 const app = express()
@@ -51,8 +52,9 @@ async function start() {
     await seedSettings()
     startCleanupService()
 
-    app.listen(config.port, () => {
+    app.listen(config.port, async () => {
       console.log(`ShareDrive backend running on port ${config.port}`)
+      await log('info', 'system', `Server started on port ${config.port}`)
     })
   } catch (err) {
     console.error('Failed to start server:', err)

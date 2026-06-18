@@ -1,7 +1,7 @@
 import { Link, useLocation, Outlet, Navigate } from 'react-router-dom'
 import { motion } from 'framer-motion'
 import {
-  LayoutDashboard, Files, Users, Settings, Shield, ChevronRight, Upload
+  LayoutDashboard, Files, Users, Settings, Shield, ChevronRight, Upload, ScrollText
 } from 'lucide-react'
 import { useAuthStore } from '@/store/authStore'
 import { cn } from '@/lib/utils'
@@ -10,6 +10,7 @@ const navItems = [
   { to: '/admin', label: 'Dashboard', icon: <LayoutDashboard size={17} />, exact: true },
   { to: '/admin/files', label: 'Files', icon: <Files size={17} /> },
   { to: '/admin/users', label: 'Users', icon: <Users size={17} /> },
+  { to: '/admin/logs', label: 'Logs', icon: <ScrollText size={17} /> },
   { to: '/admin/settings', label: 'Settings', icon: <Settings size={17} /> },
 ]
 
