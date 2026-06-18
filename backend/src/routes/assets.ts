@@ -26,10 +26,12 @@ router.post('/upload', requireAdmin, async (req, res, next) => {
     if (!ASSET_KEYS[type]) throw new AppError('Invalid type — use logo or favicon', 400)
 
     const bb = Busboy({ headers: req.headers, limits: { files: 1, fileSize: MAX_SIZE_BYTES } })
-    let uploaded = false
+    let fileStarted = false
 
     bb.on('file', (_field, stream, info) => {
+      fileStarted = true
       const { mimeType } = info
+
       if (!ALLOWED_TYPES.includes(mimeType)) {
         stream.resume()
         return next(new AppError('Invalid file type — only images allowed', 400))
@@ -58,7 +60,6 @@ router.post('/upload', requireAdmin, async (req, res, next) => {
             create: { key: SETTING_KEYS[type], value: url },
           })
 
-          uploaded = true
           res.json({ url })
         } catch (err) {
           next(err)
@@ -66,8 +67,9 @@ router.post('/upload', requireAdmin, async (req, res, next) => {
       })
     })
 
+    // Only error here if no file field arrived at all — async response comes from stream.on('end')
     bb.on('finish', () => {
-      if (!uploaded) next(new AppError('No file received', 400))
+      if (!fileStarted) next(new AppError('No file received', 400))
     })
 
     req.pipe(bb)

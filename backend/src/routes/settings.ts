@@ -89,6 +89,8 @@ router.get('/public', async (req, res, next) => {
       appName: settings['app.name'],
       appDescription: settings['app.description'],
       primaryColor: settings['appearance.primaryColor'],
+      logoUrl: settings['appearance.logoUrl'] || '',
+      faviconUrl: settings['appearance.faviconUrl'] || '',
       registrationEnabled: settings['security.registrationEnabled'] === 'true',
       maxFileSizeBytes: parseInt(settings['storage.maxFileSizeBytes']),
       maxTransferSizeBytes: parseInt(settings['storage.maxTransferSizeBytes']),

@@ -73,6 +73,8 @@ export interface PublicSettings {
   appName: string
   appDescription: string
   primaryColor: string
+  logoUrl: string
+  faviconUrl: string
   registrationEnabled: boolean
   maxFileSizeBytes: number
   maxTransferSizeBytes: number

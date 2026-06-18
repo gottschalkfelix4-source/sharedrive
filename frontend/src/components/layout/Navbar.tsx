@@ -1,15 +1,28 @@
 import { Link, useLocation, useNavigate } from 'react-router-dom'
 import { motion } from 'framer-motion'
 import { Upload, LayoutDashboard, Shield, LogOut, LogIn, UserPlus, Menu, X } from 'lucide-react'
-import { useState } from 'react'
+import { useState, useEffect } from 'react'
 import { useAuthStore } from '@/store/authStore'
 import { Button } from '@/components/ui/Button'
+import { getPublicSettings } from '@/api/settings'
 
 export function Navbar() {
   const { user, clearAuth } = useAuthStore()
   const navigate = useNavigate()
   const location = useLocation()
   const [menuOpen, setMenuOpen] = useState(false)
+  const [appName, setAppName] = useState('ShareDrive')
+  const [logoUrl, setLogoUrl] = useState('')
+
+  useEffect(() => {
+    getPublicSettings().then((s) => {
+      if (s.appName) {
+        setAppName(s.appName)
+        document.title = s.appName
+      }
+      if (s.logoUrl) setLogoUrl(s.logoUrl)
+    }).catch(() => {})
+  }, [])
 
   const handleLogout = () => {
     clearAuth()
@@ -26,10 +39,16 @@ export function Navbar() {
       <div className="max-w-6xl mx-auto px-4 h-14 flex items-center justify-between gap-4">
         {/* Logo */}
         <Link to="/" className="flex items-center gap-2 font-bold text-text-primary">
-          <div className="w-7 h-7 rounded-lg bg-gradient-primary flex items-center justify-center">
-            <Upload size={14} className="text-white" />
-          </div>
-          <span className="hidden sm:block">ShareDrive</span>
+          {logoUrl ? (
+            <img src={logoUrl} alt={appName} className="h-7 w-auto object-contain" />
+          ) : (
+            <>
+              <div className="w-7 h-7 rounded-lg bg-gradient-primary flex items-center justify-center">
+                <Upload size={14} className="text-white" />
+              </div>
+              <span className="hidden sm:block">{appName}</span>
+            </>
+          )}
         </Link>
 
         {/* Desktop nav */}
