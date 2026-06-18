@@ -64,6 +64,7 @@ export function DownloadPage() {
   const [passwordError, setPasswordError] = useState('')
   const [decrypting, setDecrypting] = useState<string | null>(null)  // fileId being decrypted
   const [dlProgress, setDlProgress] = useState<DlProgress | null>(null)
+  const [dlQueue, setDlQueue] = useState<{ current: number; total: number } | null>(null)
 
   const encKeyRaw = useEncryptionKey()
 
@@ -136,6 +137,15 @@ export function DownloadPage() {
 
   const handleDownloadAll = () => {
     window.open(getZipUrl(shortId!), '_blank')
+  }
+
+  const handleDownloadAllEncrypted = async () => {
+    const files = data?.files ?? []
+    for (let i = 0; i < files.length; i++) {
+      setDlQueue({ current: i + 1, total: files.length })
+      await handleDownloadFile(files[i].id, files[i].name, files[i].size)
+    }
+    setDlQueue(null)
   }
 
   if (isLoading) {
@@ -336,16 +346,20 @@ export function DownloadPage() {
                 icon={decrypting ? undefined : <Download size={18} />}
                 disabled={decrypting !== null}
                 onClick={
-                  transfer.files.length === 1 || isEncrypted
+                  transfer.files.length === 1
                     ? () => handleDownloadFile(transfer.files[0].id, transfer.files[0].name, transfer.files[0].size)
+                    : isEncrypted
+                    ? handleDownloadAllEncrypted
                     : handleDownloadAll
                 }
               >
                 {decrypting
-                  ? `${dlProgress?.phase === 'download' ? 'Herunterladen' : 'Entschlüsseln'}… ${dlProgress?.pct ?? 0}%`
-                  : (transfer.files.length === 1 || isEncrypted
-                    ? (isEncrypted ? 'Entschlüsseln & herunterladen' : 'Datei herunterladen')
-                    : 'Alle als ZIP herunterladen')}
+                  ? `${dlQueue ? `${dlQueue.current}/${dlQueue.total} – ` : ''}${dlProgress?.phase === 'download' ? 'Herunterladen' : 'Entschlüsseln'}… ${dlProgress?.pct ?? 0}%`
+                  : transfer.files.length === 1
+                  ? (isEncrypted ? 'Entschlüsseln & herunterladen' : 'Datei herunterladen')
+                  : isEncrypted
+                  ? 'Alle entschlüsseln & herunterladen'
+                  : 'Alle als ZIP herunterladen'}
               </Button>
 
               {decrypting && (
