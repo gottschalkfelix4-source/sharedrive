@@ -51,6 +51,18 @@ export async function getDiagToken(): Promise<{ token: string }> {
   return res.data
 }
 
+export interface LiveStats {
+  activeUploads: number
+  activeDownloads: number
+  visitorsOnline: number
+  uploadLocations: Array<{ lat: number; lon: number; city: string; country: string; count: number }>
+}
+
+export async function getLiveStats(): Promise<LiveStats> {
+  const res = await api.get('/admin/live-stats')
+  return res.data
+}
+
 export async function getLogs(params: {
   page?: number
   level?: string

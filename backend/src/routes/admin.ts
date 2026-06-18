@@ -1,9 +1,12 @@
 import { Router } from 'express'
+import geoip from 'geoip-lite'
 import { prisma } from '../lib/prisma'
 import { deleteObjects } from '../lib/minio'
 import { requireAdmin } from '../middleware/auth'
 import { AppError } from '../middleware/errorHandler'
 import { DIAG_TOKEN } from './diag'
+import { uploadSessions } from '../lib/uploadSessions'
+import { getActiveDownloads } from '../lib/liveCounters'
 
 const router = Router()
 
@@ -151,6 +154,50 @@ router.delete('/transfers/:shortId', async (req, res, next) => {
 
     await prisma.transfer.delete({ where: { id: transfer.id } })
     res.json({ success: true })
+  } catch (err) {
+    next(err)
+  }
+})
+
+// Live stats: active sessions, visitors, upload map
+router.get('/live-stats', async (req, res, next) => {
+  try {
+    const fiveMinAgo = new Date(Date.now() - 5 * 60 * 1000)
+    const thirtyDaysAgo = new Date(Date.now() - 30 * 24 * 60 * 60 * 1000)
+
+    const [visitorsResult, uploadLogRows] = await Promise.all([
+      prisma.log.findMany({
+        where: { createdAt: { gte: fiveMinAgo }, ip: { not: null } },
+        select: { ip: true },
+        distinct: ['ip'],
+      }),
+      prisma.log.findMany({
+        where: { category: 'upload', createdAt: { gte: thirtyDaysAgo }, ip: { not: null } },
+        select: { ip: true },
+      }),
+    ])
+
+    // Geolocate upload IPs and cluster by rounded lat/lon
+    const clusters = new Map<string, { lat: number; lon: number; city: string; country: string; count: number }>()
+    for (const row of uploadLogRows) {
+      const ip = (row.ip || '').replace(/^::ffff:/, '')
+      const geo = geoip.lookup(ip)
+      if (!geo?.ll) continue
+      const key = `${geo.ll[0].toFixed(1)},${geo.ll[1].toFixed(1)}`
+      const existing = clusters.get(key)
+      if (existing) {
+        existing.count++
+      } else {
+        clusters.set(key, { lat: geo.ll[0], lon: geo.ll[1], city: geo.city || '', country: geo.country || '', count: 1 })
+      }
+    }
+
+    res.json({
+      activeUploads: uploadSessions.size,
+      activeDownloads: getActiveDownloads(),
+      visitorsOnline: visitorsResult.length,
+      uploadLocations: Array.from(clusters.values()),
+    })
   } catch (err) {
     next(err)
   }
