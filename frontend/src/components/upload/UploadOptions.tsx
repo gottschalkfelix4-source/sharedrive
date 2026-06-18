@@ -1,6 +1,6 @@
 import { useState } from 'react'
 import { motion, AnimatePresence } from 'framer-motion'
-import { Settings2, Lock, Mail, Calendar, MessageSquare, ShieldCheck, ChevronDown } from 'lucide-react'
+import { Settings2, Lock, Mail, Calendar, MessageSquare, ChevronDown } from 'lucide-react'
 import { Input, Textarea } from '@/components/ui/Input'
 import { Toggle } from '@/components/ui/Toggle'
 
@@ -11,7 +11,6 @@ interface UploadOptionsProps {
     password: string
     expiresInDays: number
     notifyEmail: string
-    encrypted: boolean
   }
   onChange: (key: string, value: string | number | boolean) => void
 }
@@ -133,21 +132,6 @@ export function UploadOptions({ options, onChange }: UploadOptionsProps) {
                 </AnimatePresence>
               </div>
 
-              <div className="pt-1 border-t border-border">
-                <div className="flex items-center justify-between gap-4">
-                  <div>
-                    <p className="text-sm font-medium text-text-primary flex items-center gap-1.5">
-                      <ShieldCheck size={14} className="text-violet-400" />
-                      Ende-zu-Ende-Verschlüsselung
-                    </p>
-                    <p className="text-xs text-text-muted mt-0.5">AES-256-GCM — Schlüssel nur im Link, nie auf dem Server</p>
-                  </div>
-                  <Toggle
-                    checked={options.encrypted}
-                    onChange={(v) => onChange('encrypted', v)}
-                  />
-                </div>
-              </div>
             </div>
           </motion.div>
         )}

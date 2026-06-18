@@ -1,6 +1,6 @@
 import { useState } from 'react'
 import { motion, AnimatePresence } from 'framer-motion'
-import { Shield, Zap, Globe, ArrowRight } from 'lucide-react'
+import { Shield, Zap, Globe, ArrowRight, ShieldCheck } from 'lucide-react'
 import { UploadZone } from '@/components/upload/UploadZone'
 import { UploadOptions } from '@/components/upload/UploadOptions'
 import { UploadProgress } from '@/components/upload/UploadProgress'
@@ -8,6 +8,8 @@ import { SuccessScreen } from '@/components/upload/SuccessScreen'
 import { Button } from '@/components/ui/Button'
 import { Card } from '@/components/ui/Card'
 import { MatrixRain } from '@/components/effects/MatrixRain'
+import { LockAnimation } from '@/components/effects/LockAnimation'
+import { Toggle } from '@/components/ui/Toggle'
 import { uploadTransfer, type UploadOptions as UOpts } from '@/api/transfers'
 import toast from 'react-hot-toast'
 
@@ -34,6 +36,7 @@ export function HomePage() {
   const [phase, setPhase] = useState<Phase>('idle')
   const [progress, setProgress] = useState({ percent: 0, speed: '0 KB/s', eta: '…' })
   const [result, setResult] = useState<any>(null)
+  const [showLockAnim, setShowLockAnim] = useState(false)
 
   const handleFilesAdded = (newFiles: File[]) => {
     setFiles((prev) => [...prev, ...newFiles])
@@ -44,6 +47,7 @@ export function HomePage() {
   }
 
   const handleOptionChange = (key: string, value: string | number | boolean) => {
+    if (key === 'encrypted' && value === true) setShowLockAnim(true)
     setOptions((prev) => ({ ...prev, [key]: value }))
   }
 
@@ -108,8 +112,9 @@ export function HomePage() {
           initial={{ opacity: 0, y: 20 }}
           animate={{ opacity: 1, y: 0 }}
           transition={{ delay: 0.1 }}
-          className="bg-bg-card border border-border rounded-2xl p-6 shadow-card"
+          className="relative bg-bg-card border border-border rounded-2xl p-6 shadow-card overflow-hidden"
         >
+          <LockAnimation show={showLockAnim} onComplete={() => setShowLockAnim(false)} />
           <AnimatePresence mode="wait">
             {phase === 'idle' && (
               <motion.div
@@ -131,6 +136,21 @@ export function HomePage() {
                     animate={{ opacity: 1, y: 0 }}
                     className="space-y-4"
                   >
+                    {/* E2E encryption toggle — between file list and transfer options */}
+                    <div className="flex items-center justify-between gap-4 px-4 py-3 rounded-xl border border-border bg-bg-elevated">
+                      <div>
+                        <p className="text-sm font-medium text-text-primary flex items-center gap-1.5">
+                          <ShieldCheck size={14} className="text-violet-400" />
+                          Ende-zu-Ende-Verschlüsselung
+                        </p>
+                        <p className="text-xs text-text-muted mt-0.5">AES-256-GCM — Schlüssel nur im Link, nie auf dem Server</p>
+                      </div>
+                      <Toggle
+                        checked={options.encrypted}
+                        onChange={(v) => handleOptionChange('encrypted', v)}
+                      />
+                    </div>
+
                     <UploadOptions options={options} onChange={handleOptionChange} />
 
                     <Button
