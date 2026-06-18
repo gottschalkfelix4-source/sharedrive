@@ -5,6 +5,8 @@ import fs from 'fs'
 import { prisma } from '../lib/prisma'
 import { AppError } from '../middleware/errorHandler'
 
+const ENV_PATH = '/app/.env'
+
 const router = Router()
 const CADDYFILE_PATH = '/app/Caddyfile'
 const CADDY_ADMIN = 'http://caddy:2019'
@@ -28,18 +30,49 @@ router.get('/status', async (_req, res, next) => {
   }
 })
 
-// Returns generated infrastructure credentials — only callable before setup is complete
-router.get('/env', async (_req, res, next) => {
+function setEnvVar(content: string, key: string, value: string): string {
+  const regex = new RegExp(`^${key}=.*$`, 'm')
+  return regex.test(content)
+    ? content.replace(regex, `${key}=${value}`)
+    : `${content}\n${key}=${value}`
+}
+
+// Applies new infrastructure credentials: writes .env and changes postgres password live
+router.post('/credentials', async (req, res, next) => {
   try {
     if (await adminExists()) throw new AppError('Setup already completed', 403)
-    res.json({
-      dbPassword:    process.env.POSTGRES_PASSWORD || '',
-      dbUser:        process.env.POSTGRES_USER     || 'sharedrive',
-      dbName:        process.env.POSTGRES_DB       || 'sharedrive',
-      minioUser:     process.env.MINIO_ROOT_USER   || 'minioadmin',
-      minioPassword: process.env.MINIO_ROOT_PASSWORD || '',
-      jwtSecret:     process.env.JWT_SECRET        || '',
-    })
+
+    const { dbPassword, minioPassword, jwtSecret } = z.object({
+      dbPassword:    z.string().min(8),
+      minioPassword: z.string().min(8),
+      jwtSecret:     z.string().min(16),
+    }).parse(req.body)
+
+    const dbUser = process.env.POSTGRES_USER || 'sharedrive'
+    const dbName = process.env.POSTGRES_DB   || 'sharedrive'
+
+    // 1. Update .env on disk (bind-mounted from host)
+    let envContent = fs.readFileSync(ENV_PATH, 'utf8')
+    envContent = setEnvVar(envContent, 'POSTGRES_PASSWORD', dbPassword)
+    envContent = setEnvVar(envContent, 'DATABASE_URL',
+      `postgresql://${dbUser}:${dbPassword}@postgres:5432/${dbName}`)
+    envContent = setEnvVar(envContent, 'MINIO_ROOT_PASSWORD', minioPassword)
+    envContent = setEnvVar(envContent, 'MINIO_SECRET_KEY',    minioPassword)
+    envContent = setEnvVar(envContent, 'JWT_SECRET',           jwtSecret)
+    fs.writeFileSync(ENV_PATH, envContent, 'utf8')
+
+    // 2. Change postgres password live (existing connections stay valid)
+    const escapedPass = dbPassword.replace(/'/g, "''")
+    await prisma.$executeRawUnsafe(
+      `ALTER ROLE "${dbUser}" WITH PASSWORD '${escapedPass}'`
+    )
+
+    // 3. Update in-process env so new tokens use new secret
+    process.env.JWT_SECRET           = jwtSecret
+    process.env.MINIO_ROOT_PASSWORD  = minioPassword
+    process.env.MINIO_SECRET_KEY     = minioPassword
+
+    res.json({ ok: true })
   } catch (err) {
     next(err)
   }

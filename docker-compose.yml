@@ -34,6 +34,7 @@ services:
     environment:
       NODE_ENV: production
     volumes:
+      - ./.env:/app/.env
       - ./Caddyfile:/app/Caddyfile
     depends_on:
       postgres:

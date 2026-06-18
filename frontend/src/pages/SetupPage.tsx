@@ -1,96 +1,146 @@
-import { useState, useEffect } from 'react'
+import { useState } from 'react'
 import { useNavigate } from 'react-router-dom'
 import { motion, AnimatePresence } from 'framer-motion'
 import {
   Shield, Mail, User, Lock, ArrowRight, CheckCircle2, Globe,
-  KeyRound, ShieldCheck, Copy, Eye, EyeOff, Database, Server,
+  KeyRound, ShieldCheck, Copy, Eye, EyeOff, Database, Server, RefreshCw,
 } from 'lucide-react'
-import { runSetup, getSetupEnv, applySSL, type SetupEnv } from '@/api/setup'
+import { runSetup, applyCredentials, applySSL } from '@/api/setup'
 import { login } from '@/api/auth'
 import { useAuthStore } from '@/store/authStore'
 import { Button } from '@/components/ui/Button'
 import { Input } from '@/components/ui/Input'
 import { Toggle } from '@/components/ui/Toggle'
-import { Spinner } from '@/components/ui/Spinner'
 import toast from 'react-hot-toast'
 
-const steps = [
-  { icon: <Shield size={20} />,    label: 'Willkommen',    desc: 'Ersteinrichtung' },
-  { icon: <KeyRound size={20} />,  label: 'Zugangsdaten',  desc: 'Generierte Credentials' },
-  { icon: <Globe size={20} />,     label: 'Domain & SSL',  desc: 'Öffentliche URL' },
-  { icon: <User size={20} />,      label: 'Admin-Konto',   desc: 'Zugangsdaten erstellen' },
-  { icon: <CheckCircle2 size={20} />, label: 'Fertig',     desc: 'Bereit' },
-]
+// ── Password generation ──────────────────────────────────────
+function genPassword(length: number): string {
+  const charset = 'ABCDEFGHIJKLMNOPQRSTUVWXYZabcdefghijklmnopqrstuvwxyz0123456789'
+  const array = new Uint8Array(length)
+  crypto.getRandomValues(array)
+  return Array.from(array, b => charset[b % charset.length]).join('')
+}
 
-function CopyField({ label, value, icon, secret }: { label: string; value: string; icon: React.ReactNode; secret?: boolean }) {
+function genHex(length: number): string {
+  const array = new Uint8Array(Math.ceil(length / 2))
+  crypto.getRandomValues(array)
+  return Array.from(array, b => b.toString(16).padStart(2, '0')).join('').slice(0, length)
+}
+
+const initialCreds = () => ({
+  dbPassword:    genPassword(32),
+  minioPassword: genPassword(32),
+  jwtSecret:     genHex(64),
+})
+
+// ── CredentialInput component ────────────────────────────────
+function CredentialInput({
+  label, value, onChange, onRegenerate, icon,
+}: {
+  label: string
+  value: string
+  onChange: (v: string) => void
+  onRegenerate: () => void
+  icon: React.ReactNode
+}) {
   const [revealed, setRevealed] = useState(false)
   const copy = () => { navigator.clipboard.writeText(value); toast.success(`${label} kopiert`) }
-  const display = secret && !revealed ? '•'.repeat(Math.min(value.length, 24)) : value
 
   return (
     <div className="space-y-1">
       <p className="text-xs text-text-muted flex items-center gap-1.5">{icon}{label}</p>
-      <div className="flex items-center gap-2 bg-bg rounded-xl border border-border px-3 py-2">
-        <span className="flex-1 font-mono text-xs text-text-secondary break-all leading-relaxed">
-          {display}
-        </span>
-        {secret && (
-          <button onClick={() => setRevealed(v => !v)} className="text-text-muted hover:text-text-primary transition-colors flex-shrink-0">
-            {revealed ? <EyeOff size={13} /> : <Eye size={13} />}
-          </button>
-        )}
-        <button onClick={copy} className="text-text-muted hover:text-text-primary transition-colors flex-shrink-0">
-          <Copy size={13} />
+      <div className="flex items-center gap-2">
+        <div className="relative flex-1">
+          <input
+            type={revealed ? 'text' : 'password'}
+            value={value}
+            onChange={e => onChange(e.target.value)}
+            spellCheck={false}
+            className="w-full font-mono text-xs bg-bg border border-border rounded-xl px-3 py-2.5 pr-14 text-text-secondary focus:outline-none focus:border-primary/50 focus:ring-1 focus:ring-primary/20 transition-colors"
+          />
+          <div className="absolute right-2.5 top-1/2 -translate-y-1/2 flex items-center gap-2">
+            <button onClick={() => setRevealed(v => !v)} className="text-text-muted hover:text-text-primary transition-colors">
+              {revealed ? <EyeOff size={12} /> : <Eye size={12} />}
+            </button>
+            <button onClick={copy} className="text-text-muted hover:text-text-primary transition-colors">
+              <Copy size={12} />
+            </button>
+          </div>
+        </div>
+        <button
+          onClick={onRegenerate}
+          title="Neu generieren"
+          className="flex-shrink-0 p-2.5 rounded-xl border border-border bg-bg-elevated hover:border-primary/40 hover:text-primary text-text-muted transition-colors"
+        >
+          <RefreshCw size={13} />
         </button>
       </div>
     </div>
   )
 }
 
+// ── Wizard steps ─────────────────────────────────────────────
+const steps = [
+  { icon: <Shield size={20} />,       label: 'Willkommen',   desc: 'Ersteinrichtung' },
+  { icon: <KeyRound size={20} />,     label: 'Zugangsdaten', desc: 'Passwörter festlegen' },
+  { icon: <Globe size={20} />,        label: 'Domain & SSL', desc: 'Öffentliche URL' },
+  { icon: <User size={20} />,         label: 'Admin-Konto',  desc: 'Zugangsdaten erstellen' },
+  { icon: <CheckCircle2 size={20} />, label: 'Fertig',       desc: 'Bereit' },
+]
+
 export function SetupPage() {
-  const navigate  = useNavigate()
+  const navigate   = useNavigate()
   const { setAuth } = useAuthStore()
   const [step, setStep] = useState<0 | 1 | 2 | 3 | 4>(0)
 
-  // Step 1 — credentials
-  const [env, setEnv]           = useState<SetupEnv | null>(null)
-  const [envLoading, setEnvLoading] = useState(false)
+  // Step 1 — credentials (generated in browser)
+  const [creds, setCreds]           = useState(initialCreds)
+  const [credsApplying, setCredsApplying] = useState(false)
+  const [credsApplied,  setCredsApplied]  = useState(false)
 
   // Step 2 — domain / SSL
-  const [baseUrl, setBaseUrl]   = useState(() => window.location.origin)
-  const [urlError, setUrlError] = useState('')
+  const [baseUrl, setBaseUrl]         = useState(() => window.location.origin)
+  const [urlError, setUrlError]       = useState('')
   const [sslEnabled, setSslEnabled]   = useState(false)
   const [sslDomain, setSslDomain]     = useState('')
   const [sslDomainErr, setSslDomainErr] = useState('')
   const [acmeEmail, setAcmeEmail]     = useState('')
   const [sslApplying, setSslApplying] = useState(false)
-  const [sslApplied, setSslApplied]   = useState(false)
+  const [sslApplied,  setSslApplied]  = useState(false)
 
   // Step 3 — admin account
-  const [form, setForm]   = useState({ email: '', username: '', password: '', confirm: '' })
+  const [form, setForm]     = useState({ email: '', username: '', password: '', confirm: '' })
   const [errors, setErrors] = useState<Record<string, string>>({})
   const [loading, setLoading] = useState(false)
 
-  // Auto-extract domain from baseUrl when user types
-  useEffect(() => {
-    try {
-      const u = new URL(baseUrl)
-      if (u.hostname && u.hostname !== 'localhost') setSslDomain(u.hostname)
-    } catch {}
-  }, [baseUrl])
-
-  const loadEnv = async () => {
-    setEnvLoading(true)
-    try {
-      setEnv(await getSetupEnv())
-    } catch {
-      toast.error('Zugangsdaten konnten nicht geladen werden')
-    } finally {
-      setEnvLoading(false)
-    }
+  // ── helpers ─────────────────────────────────────────────────
+  const setCred = (key: keyof typeof creds) => (v: string) => {
+    setCreds(c => ({ ...c, [key]: v }))
+    setCredsApplied(false)
   }
 
-  const goToStep1 = () => { setStep(1); loadEnv() }
+  const regenCred = (key: keyof typeof creds, gen: () => string) => () => {
+    setCreds(c => ({ ...c, [key]: gen() }))
+    setCredsApplied(false)
+  }
+
+  const regenAll = () => { setCreds(initialCreds()); setCredsApplied(false) }
+
+  const handleApplyCreds = async () => {
+    if (!creds.dbPassword || !creds.minioPassword || !creds.jwtSecret) {
+      toast.error('Alle Felder müssen ausgefüllt sein'); return
+    }
+    setCredsApplying(true)
+    try {
+      await applyCredentials(creds)
+      setCredsApplied(true)
+      toast.success('Zugangsdaten gespeichert')
+    } catch (err: any) {
+      toast.error(err?.response?.data?.error || 'Fehler beim Speichern der Zugangsdaten')
+    } finally {
+      setCredsApplying(false)
+    }
+  }
 
   const validateUrl = () => {
     try {
@@ -147,21 +197,18 @@ export function SetupPage() {
     }
   }
 
-  const copyAllCredentials = () => {
-    if (!env) return
+  const copyAllCreds = () => {
     const text = [
-      `# ShareDrive Zugangsdaten`,
-      `POSTGRES_USER=${env.dbUser}`,
-      `POSTGRES_PASSWORD=${env.dbPassword}`,
-      `POSTGRES_DB=${env.dbName}`,
-      `MINIO_ROOT_USER=${env.minioUser}`,
-      `MINIO_ROOT_PASSWORD=${env.minioPassword}`,
-      `JWT_SECRET=${env.jwtSecret}`,
+      '# ShareDrive Zugangsdaten',
+      `POSTGRES_PASSWORD=${creds.dbPassword}`,
+      `MINIO_ROOT_PASSWORD=${creds.minioPassword}`,
+      `JWT_SECRET=${creds.jwtSecret}`,
     ].join('\n')
     navigator.clipboard.writeText(text)
     toast.success('Alle Zugangsdaten kopiert')
   }
 
+  // ── render ───────────────────────────────────────────────────
   return (
     <div className="min-h-screen flex items-center justify-center px-4 py-8 relative">
       <div className="absolute inset-0 overflow-hidden pointer-events-none">
@@ -176,7 +223,7 @@ export function SetupPage() {
             <div key={i} className="flex items-center flex-1 last:flex-none">
               <div className="flex flex-col items-center gap-1">
                 <div className={`w-9 h-9 rounded-xl flex items-center justify-center transition-all duration-300 ${
-                  i < step  ? 'bg-emerald-500/20 text-emerald-400 border border-emerald-500/30' :
+                  i < step   ? 'bg-emerald-500/20 text-emerald-400 border border-emerald-500/30' :
                   i === step ? 'bg-primary/20 text-primary border border-primary/30' :
                                'bg-white/5 text-text-muted border border-border'
                 }`}>
@@ -192,9 +239,9 @@ export function SetupPage() {
         </div>
 
         <div className="bg-bg-card border border-border rounded-2xl shadow-card overflow-hidden">
+          <AnimatePresence mode="wait">
 
           {/* ── Step 0: Welcome ── */}
-          <AnimatePresence mode="wait">
           {step === 0 && (
             <motion.div key="s0" initial={{ opacity: 0, x: 20 }} animate={{ opacity: 1, x: 0 }} exit={{ opacity: 0, x: -20 }} className="p-8 text-center">
               <div className="w-16 h-16 rounded-2xl bg-gradient-primary flex items-center justify-center mx-auto mb-4">
@@ -206,7 +253,7 @@ export function SetupPage() {
               </p>
               <div className="mt-6 p-4 bg-primary/5 border border-primary/20 rounded-xl text-left space-y-2">
                 {[
-                  'Zugangsdaten sichern (auto-generiert)',
+                  'Sichere Passwörter direkt im Browser generieren',
                   'Domain konfigurieren & SSL aktivieren',
                   'Admin-Konto erstellen',
                 ].map((item, i) => (
@@ -216,7 +263,7 @@ export function SetupPage() {
                   </div>
                 ))}
               </div>
-              <Button className="w-full mt-6" size="lg" icon={<ArrowRight size={17} />} onClick={goToStep1}>
+              <Button className="w-full mt-6" size="lg" icon={<ArrowRight size={17} />} onClick={() => setStep(1)}>
                 Loslegen
               </Button>
             </motion.div>
@@ -226,55 +273,102 @@ export function SetupPage() {
           {step === 1 && (
             <motion.div key="s1" initial={{ opacity: 0, x: 20 }} animate={{ opacity: 1, x: 0 }} exit={{ opacity: 0, x: -20 }} className="p-8">
               <div className="mb-5">
-                <h2 className="text-xl font-bold text-text-primary">Zugangsdaten</h2>
+                <h2 className="text-xl font-bold text-text-primary">Zugangsdaten festlegen</h2>
                 <p className="text-text-muted text-sm mt-1">
-                  Diese Zugangsdaten wurden automatisch generiert. Sichere sie jetzt — sie können später nicht mehr hier eingesehen werden.
+                  Sichere Passwörter wurden im Browser generiert. Du kannst sie anpassen oder einzeln neu generieren.
                 </p>
               </div>
 
-              {envLoading || !env ? (
-                <div className="flex items-center justify-center py-12">
-                  <Spinner size="lg" />
+              <div className="space-y-4">
+                <button
+                  onClick={regenAll}
+                  className="w-full flex items-center justify-center gap-2 text-xs text-text-muted hover:text-primary border border-border hover:border-primary/30 rounded-xl py-2 transition-colors"
+                >
+                  <RefreshCw size={12} /> Alle neu generieren
+                </button>
+
+                <div>
+                  <p className="text-xs font-medium text-text-secondary flex items-center gap-1.5 mb-2">
+                    <Database size={12} /> Datenbank-Passwort
+                  </p>
+                  <CredentialInput
+                    label="POSTGRES_PASSWORD"
+                    value={creds.dbPassword}
+                    onChange={setCred('dbPassword')}
+                    onRegenerate={regenCred('dbPassword', () => genPassword(32))}
+                    icon={<Lock size={11} />}
+                  />
                 </div>
-              ) : (
-                <div className="space-y-3">
-                  <p className="text-xs font-medium text-text-secondary flex items-center gap-1.5">
-                    <Database size={12} /> Datenbank
+
+                <div>
+                  <p className="text-xs font-medium text-text-secondary flex items-center gap-1.5 mb-2">
+                    <Server size={12} /> MinIO-Passwort
                   </p>
-                  <CopyField label="Benutzer"  value={env.dbUser}     icon={<User size={11} />} />
-                  <CopyField label="Datenbank" value={env.dbName}     icon={<Database size={11} />} />
-                  <CopyField label="Passwort"  value={env.dbPassword} icon={<Lock size={11} />} secret />
+                  <CredentialInput
+                    label="MINIO_ROOT_PASSWORD"
+                    value={creds.minioPassword}
+                    onChange={setCred('minioPassword')}
+                    onRegenerate={regenCred('minioPassword', () => genPassword(32))}
+                    icon={<Lock size={11} />}
+                  />
+                </div>
 
-                  <p className="text-xs font-medium text-text-secondary flex items-center gap-1.5 pt-1">
-                    <Server size={12} /> MinIO (Objektspeicher)
+                <div>
+                  <p className="text-xs font-medium text-text-secondary flex items-center gap-1.5 mb-2">
+                    <Shield size={12} /> JWT Secret
                   </p>
-                  <CopyField label="Benutzer" value={env.minioUser}     icon={<User size={11} />} />
-                  <CopyField label="Passwort" value={env.minioPassword} icon={<Lock size={11} />} secret />
+                  <CredentialInput
+                    label="JWT_SECRET"
+                    value={creds.jwtSecret}
+                    onChange={setCred('jwtSecret')}
+                    onRegenerate={regenCred('jwtSecret', () => genHex(64))}
+                    icon={<KeyRound size={11} />}
+                  />
+                </div>
 
-                  <p className="text-xs font-medium text-text-secondary flex items-center gap-1.5 pt-1">
-                    <Shield size={12} /> Sicherheit
-                  </p>
-                  <CopyField label="JWT Secret" value={env.jwtSecret} icon={<KeyRound size={11} />} secret />
+                <button
+                  onClick={copyAllCreds}
+                  className="w-full flex items-center justify-center gap-2 text-xs text-primary hover:text-primary/80 border border-primary/30 hover:border-primary/50 rounded-xl py-2.5 transition-colors"
+                >
+                  <Copy size={12} /> Alle Zugangsdaten kopieren
+                </button>
 
-                  <button
-                    onClick={copyAllCredentials}
-                    className="w-full mt-1 flex items-center justify-center gap-2 text-xs text-primary hover:text-primary/80 border border-primary/30 hover:border-primary/50 rounded-xl py-2.5 transition-colors"
-                  >
-                    <Copy size={12} /> Alle Zugangsdaten kopieren
-                  </button>
-
-                  <div className="p-3 bg-amber-500/5 border border-amber-500/20 rounded-xl">
-                    <p className="text-xs text-amber-400/80 leading-relaxed">
-                      <span className="font-medium text-amber-400">Wichtig:</span> Diese Zugangsdaten sind in der <code className="bg-white/5 px-1 rounded">.env</code>-Datei auf deinem Server gespeichert. Sichere sie an einem sicheren Ort.
-                    </p>
+                {credsApplied ? (
+                  <div className="flex items-center gap-2 text-sm text-emerald-400 bg-emerald-500/10 border border-emerald-500/20 rounded-xl px-4 py-3">
+                    <CheckCircle2 size={15} />
+                    Zugangsdaten gespeichert & angewendet
                   </div>
+                ) : (
+                  <Button
+                    variant="secondary"
+                    className="w-full"
+                    loading={credsApplying}
+                    icon={<Shield size={15} />}
+                    onClick={handleApplyCreds}
+                  >
+                    Zugangsdaten speichern & anwenden
+                  </Button>
+                )}
+
+                <div className="p-3 bg-amber-500/5 border border-amber-500/20 rounded-xl">
+                  <p className="text-xs text-amber-400/80 leading-relaxed">
+                    <span className="font-medium text-amber-400">Wichtig:</span> Sichere diese Passwörter — sie werden in der <code className="bg-white/5 px-1 rounded">.env</code>-Datei auf deinem Server gespeichert.
+                  </p>
                 </div>
-              )}
+              </div>
 
               <div className="flex gap-3 mt-5">
                 <Button variant="secondary" onClick={() => setStep(0)} className="flex-1">Zurück</Button>
-                <Button className="flex-1" size="lg" icon={<ArrowRight size={17} />} onClick={() => setStep(2)} disabled={!env}>
-                  Gesichert & weiter
+                <Button
+                  className="flex-1"
+                  size="lg"
+                  icon={<ArrowRight size={17} />}
+                  onClick={() => {
+                    if (credsApplied) setStep(2)
+                    else toast.error('Bitte erst Zugangsdaten speichern & anwenden')
+                  }}
+                >
+                  Weiter
                 </Button>
               </div>
             </motion.div>
@@ -295,13 +389,12 @@ export function SetupPage() {
                   label="Basis-URL"
                   placeholder="https://share.yourdomain.com"
                   value={baseUrl}
-                  onChange={(e) => { setBaseUrl(e.target.value); setUrlError('') }}
+                  onChange={e => { setBaseUrl(e.target.value); setUrlError('') }}
                   error={urlError}
                   icon={<Globe size={15} />}
                   hint="Wird in Download-Links und E-Mails verwendet."
                 />
 
-                {/* SSL section */}
                 <div className="border border-border rounded-xl overflow-hidden">
                   <div className="flex items-center justify-between gap-4 px-4 py-3 bg-bg-elevated">
                     <div>
@@ -313,7 +406,7 @@ export function SetupPage() {
                     </div>
                     <Toggle
                       checked={sslEnabled}
-                      onChange={(v) => {
+                      onChange={v => {
                         setSslEnabled(v)
                         setSslApplied(false)
                         if (v) {
@@ -329,7 +422,7 @@ export function SetupPage() {
                         label="Domain"
                         placeholder="share.yourdomain.com"
                         value={sslDomain}
-                        onChange={(e) => { setSslDomain(e.target.value); setSslDomainErr('') }}
+                        onChange={e => { setSslDomain(e.target.value); setSslDomainErr('') }}
                         error={sslDomainErr}
                         icon={<Globe size={15} />}
                         hint="Muss auf die IP dieses Servers zeigen (A-Record gesetzt)."
@@ -339,10 +432,9 @@ export function SetupPage() {
                         type="email"
                         placeholder="admin@yourdomain.com"
                         value={acmeEmail}
-                        onChange={(e) => setAcmeEmail(e.target.value)}
+                        onChange={e => setAcmeEmail(e.target.value)}
                         icon={<Mail size={15} />}
                       />
-
                       {sslApplied ? (
                         <div className="flex items-center gap-2 text-sm text-emerald-400 bg-emerald-500/10 border border-emerald-500/20 rounded-xl px-4 py-3">
                           <CheckCircle2 size={15} />
@@ -359,13 +451,9 @@ export function SetupPage() {
                           SSL jetzt aktivieren
                         </Button>
                       )}
-
                       <div className="p-3 bg-violet-500/5 border border-violet-500/20 rounded-xl space-y-1">
                         <p className="text-xs font-medium text-violet-300">Voraussetzungen</p>
-                        {[
-                          'Domain-A-Record zeigt auf diese Server-IP',
-                          'Ports 80 und 443 am VPS geöffnet',
-                        ].map((r, i) => (
+                        {['Domain-A-Record zeigt auf diese Server-IP', 'Ports 80 und 443 am VPS geöffnet'].map((r, i) => (
                           <div key={i} className="flex items-center gap-1.5 text-xs text-text-muted">
                             <CheckCircle2 size={10} className="text-violet-400 flex-shrink-0" />
                             {r}
@@ -400,16 +488,16 @@ export function SetupPage() {
               </div>
               <form onSubmit={handleSubmit} className="space-y-4">
                 <Input label="E-Mail-Adresse" type="email" placeholder="admin@yourdomain.com"
-                  value={form.email} onChange={(e) => setForm({ ...form, email: e.target.value })}
+                  value={form.email} onChange={e => setForm({ ...form, email: e.target.value })}
                   error={errors.email} icon={<Mail size={15} />} />
                 <Input label="Benutzername" placeholder="admin"
-                  value={form.username} onChange={(e) => setForm({ ...form, username: e.target.value })}
+                  value={form.username} onChange={e => setForm({ ...form, username: e.target.value })}
                   error={errors.username} icon={<User size={15} />} />
                 <Input label="Passwort" type="password" placeholder="Mind. 8 Zeichen"
-                  value={form.password} onChange={(e) => setForm({ ...form, password: e.target.value })}
+                  value={form.password} onChange={e => setForm({ ...form, password: e.target.value })}
                   error={errors.password} icon={<Lock size={15} />} />
                 <Input label="Passwort bestätigen" type="password" placeholder="Passwort wiederholen"
-                  value={form.confirm} onChange={(e) => setForm({ ...form, confirm: e.target.value })}
+                  value={form.confirm} onChange={e => setForm({ ...form, confirm: e.target.value })}
                   error={errors.confirm} icon={<Lock size={15} />} />
                 <div className="flex gap-3">
                   <Button variant="secondary" type="button" onClick={() => setStep(2)} className="flex-1">Zurück</Button>
@@ -452,6 +540,7 @@ export function SetupPage() {
               </Button>
             </motion.div>
           )}
+
           </AnimatePresence>
         </div>
       </motion.div>
