@@ -1,6 +1,7 @@
 import { motion } from 'framer-motion'
 import { ShieldCheck, ShieldOff, AlertCircle } from 'lucide-react'
 import { Button } from '@/components/ui/Button'
+import { ProgressRing } from '@/components/ui/ProgressRing'
 
 interface VirusScanProgressProps {
   percent: number
@@ -18,33 +19,14 @@ export function VirusScanProgress({ percent, currentFile, fileCount, phase = 'st
       animate={{ opacity: 1, scale: 1 }}
       className="text-center space-y-6"
     >
-      <div className="relative mx-auto w-24 h-24">
-        <svg className="w-full h-full -rotate-90" viewBox="0 0 100 100">
-          <circle cx="50" cy="50" r="42" fill="none" stroke="rgba(255,255,255,0.05)" strokeWidth="8" />
-          <motion.circle
-            cx="50"
-            cy="50"
-            r="42"
-            fill="none"
-            stroke="url(#scanGrad)"
-            strokeWidth="8"
-            strokeLinecap="round"
-            strokeDasharray={2 * Math.PI * 42}
-            strokeDashoffset={2 * Math.PI * 42 * (1 - percent / 100)}
-            animate={analyzing ? { opacity: [1, 0.35, 1] } : { opacity: 1 }}
-            transition={analyzing ? { duration: 1.3, repeat: Infinity, ease: 'easeInOut' } : { duration: 0.5 }}
-          />
-          <defs>
-            <linearGradient id="scanGrad" x1="0%" y1="0%" x2="100%" y2="0%">
-              <stop offset="0%" stopColor="#10b981" />
-              <stop offset="100%" stopColor="#22d3ee" />
-            </linearGradient>
-          </defs>
-        </svg>
-        <div className="absolute inset-0 flex items-center justify-center">
+      <ProgressRing percent={percent} colorFrom="#10b981" colorTo="#22d3ee" indeterminate={analyzing}>
+        <motion.div
+          animate={analyzing ? { scale: [1, 1.08, 1] } : { scale: 1 }}
+          transition={analyzing ? { duration: 1.1, repeat: Infinity, ease: 'easeInOut' } : { duration: 0.3 }}
+        >
           <ShieldCheck size={28} className="text-emerald-400" />
-        </div>
-      </div>
+        </motion.div>
+      </ProgressRing>
 
       <div>
         <p className="text-lg font-semibold text-text-primary">

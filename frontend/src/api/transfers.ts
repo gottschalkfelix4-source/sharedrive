@@ -119,7 +119,7 @@ export async function uploadTransfer(
     const elapsed = (Date.now() - startTime) / 1000 || 0.001
     const speed   = uploadedBytes / elapsed
     const remSec  = speed > 0 ? Math.round((totalBytes - uploadedBytes) / speed) : 0
-    options.onProgress(pct, formatBytes(speed) + '/s', remSec + 's')
+    options.onProgress(pct, formatBytes(speed) + '/s', formatEta(remSec))
   }
 
   // Generate encryption key if E2E is requested
@@ -239,6 +239,11 @@ export function getDownloadUrl(shortId: string, fileId: string): string {
 
 export function getZipUrl(shortId: string): string {
   return `/api/d/${shortId}/zip`
+}
+
+function formatEta(seconds: number): string {
+  if (seconds < 60) return `${seconds}s`
+  return `${Math.round(seconds / 60)} min`
 }
 
 function formatBytes(bytes: number): string {
