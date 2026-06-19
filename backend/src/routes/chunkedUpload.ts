@@ -14,6 +14,7 @@ import { log } from '../services/logger'
 import { uploadSessions } from '../lib/uploadSessions'
 import type { FileSession } from '../lib/uploadSessions'
 import { createScanSession, runTransferScan } from '../services/virusScan'
+import { sendUploadConfirmationEmail } from '../services/email'
 import rateLimit from 'express-rate-limit'
 
 const router = Router()
@@ -42,7 +43,7 @@ router.post('/init', uploadLimiter, optionalAuth, async (req: Request, res: Resp
       ? parseInt(settings['storage.retentionDaysRegistered'])
       : parseInt(settings['storage.retentionDaysAnonymous'])
 
-    const { title, message, password, expiresInDays, notifyEmail, files, encrypted } = req.body
+    const { title, message, password, expiresInDays, notifyEmail, files, encrypted, maxDownloads } = req.body
 
     if (!Array.isArray(files) || files.length === 0) {
       return res.status(400).json({ error: 'No files provided' })
@@ -57,6 +58,15 @@ router.post('/init', uploadLimiter, optionalAuth, async (req: Request, res: Resp
       if (f.size > maxFileSizeBytes) {
         return res.status(413).json({ error: `File "${f.name}" exceeds max size` })
       }
+    }
+
+    let maxDownloadsValue: number | null = null
+    if (maxDownloads !== undefined && maxDownloads !== null && maxDownloads !== '') {
+      const parsed = parseInt(maxDownloads)
+      if (!Number.isFinite(parsed) || parsed < 1 || parsed > 100000) {
+        return res.status(400).json({ error: 'Invalid maxDownloads value' })
+      }
+      maxDownloadsValue = parsed
     }
 
     const shortId = nanoid(10)
@@ -84,6 +94,7 @@ router.post('/init', uploadLimiter, optionalAuth, async (req: Request, res: Resp
         uploadId,
         storageKey,
         filename:     file.name,
+        relativePath: file.relativePath || undefined,
         mimeType:     file.mimeType || 'application/octet-stream',
         declaredSize: file.size,
         parts:        [],
@@ -94,7 +105,7 @@ router.post('/init', uploadLimiter, optionalAuth, async (req: Request, res: Resp
       shortId,
       userId,
       files:                new Map(fileSessions),
-      meta:                 { title, message, passwordHash, expiresAt, notifyEmail },
+      meta:                 { title, message, passwordHash, expiresAt, notifyEmail, maxDownloads: maxDownloadsValue },
       maxTransferSizeBytes,
       encrypted:            !!encrypted,
       createdAt:            new Date(),
@@ -158,7 +169,7 @@ router.post('/:shortId/finalize', async (req: Request, res: Response, next: Next
     if (!session) return res.status(404).json({ error: 'Upload session not found or expired' })
 
     let totalSize = 0
-    const uploadedFiles: { name: string; size: number; mimeType: string; storageKey: string }[] = []
+    const uploadedFiles: { name: string; relativePath?: string; size: number; mimeType: string; storageKey: string }[] = []
 
     // Complete every multipart upload
     for (const [, fs] of session.files) {
@@ -168,10 +179,11 @@ router.post('/:shortId/finalize', async (req: Request, res: Response, next: Next
       await completeFileParts(fs.storageKey, fs.uploadId, fs.parts)
       totalSize += fs.declaredSize
       uploadedFiles.push({
-        name:       fs.filename,
-        size:       fs.declaredSize,
-        mimeType:   fs.mimeType,
-        storageKey: fs.storageKey,
+        name:         fs.filename,
+        relativePath: fs.relativePath,
+        size:         fs.declaredSize,
+        mimeType:     fs.mimeType,
+        storageKey:   fs.storageKey,
       })
     }
 
@@ -199,15 +211,17 @@ router.post('/:shortId/finalize', async (req: Request, res: Response, next: Next
           passwordHash: session.meta.passwordHash,
           expiresAt:    session.meta.expiresAt,
           notifyEmail:  session.meta.notifyEmail,
+          maxDownloads: session.meta.maxDownloads ?? null,
           totalSize:    BigInt(totalSize),
           encrypted:    session.encrypted,
           virusScanned: false,
           files: {
             create: uploadedFiles.map((f) => ({
-              name:       f.name,
-              size:       BigInt(f.size),
-              mimeType:   f.mimeType,
-              storageKey: f.storageKey,
+              name:         f.name,
+              relativePath: f.relativePath,
+              size:         BigInt(f.size),
+              mimeType:     f.mimeType,
+              storageKey:   f.storageKey,
             })),
           },
         },
@@ -229,6 +243,10 @@ router.post('/:shortId/finalize', async (req: Request, res: Response, next: Next
         { userId: session.userId ?? undefined, ip: req.ip },
       )
 
+      if (transfer.notifyEmail) {
+        sendUploadConfirmationEmail(transfer.notifyEmail, transfer.shortId, transfer.title ?? null, transfer.expiresAt).catch(console.error)
+      }
+
       return res.status(201).json({
         shortId:      transfer.shortId,
         expiresAt:    transfer.expiresAt,
@@ -247,6 +265,7 @@ router.post('/:shortId/finalize', async (req: Request, res: Response, next: Next
       passwordHash: session.meta.passwordHash,
       expiresAt:    session.meta.expiresAt,
       notifyEmail:  session.meta.notifyEmail,
+      maxDownloads: session.meta.maxDownloads,
       totalSize,
       files:        uploadedFiles,
     })

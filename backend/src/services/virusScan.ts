@@ -4,6 +4,7 @@ import { scanReadable } from '../lib/clamav'
 import { log } from './logger'
 import { scanSessions } from '../lib/scanSessions'
 import type { PendingTransfer } from '../lib/scanSessions'
+import { sendUploadConfirmationEmail } from './email'
 
 export function createScanSession(scanId: string, pending: PendingTransfer): void {
   scanSessions.set(scanId, {
@@ -73,12 +74,14 @@ export async function runTransferScan(scanId: string, ip?: string): Promise<void
         passwordHash: pending.passwordHash,
         expiresAt: pending.expiresAt,
         notifyEmail: pending.notifyEmail,
+        maxDownloads: pending.maxDownloads ?? null,
         totalSize: BigInt(pending.totalSize),
         encrypted: false,
         virusScanned: true,
         files: {
           create: pending.files.map((f) => ({
             name: f.name,
+            relativePath: f.relativePath,
             size: BigInt(f.size),
             mimeType: f.mimeType,
             storageKey: f.storageKey,
@@ -110,6 +113,10 @@ export async function runTransferScan(scanId: string, ip?: string): Promise<void
       fileCount: transfer.files.length,
       totalSize: pending.totalSize.toString(),
       virusScanned: true,
+    }
+
+    if (pending.notifyEmail) {
+      sendUploadConfirmationEmail(pending.notifyEmail, transfer.shortId, transfer.title ?? null, transfer.expiresAt).catch(console.error)
     }
   } catch (err) {
     await deleteObjects(pending.files.map((f) => f.storageKey)).catch(() => {})

@@ -63,14 +63,15 @@ model Transfer {
 }
 
 model File {
-  id         String   @id @default(cuid())
-  transferId String
-  transfer   Transfer @relation(fields: [transferId], references: [id], onDelete: Cascade)
-  name       String
-  size       BigInt
-  mimeType   String
-  storageKey String
-  createdAt  DateTime @default(now())
+  id           String   @id @default(cuid())
+  transferId   String
+  transfer     Transfer @relation(fields: [transferId], references: [id], onDelete: Cascade)
+  name         String
+  relativePath String?
+  size         BigInt
+  mimeType     String
+  storageKey   String
+  createdAt    DateTime @default(now())
 
   @@index([transferId])
 }

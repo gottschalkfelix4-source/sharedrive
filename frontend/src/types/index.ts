@@ -11,6 +11,7 @@ export interface User {
 export interface FileInfo {
   id: string
   name: string
+  relativePath?: string | null
   size: string
   mimeType: string
 }
@@ -23,12 +24,21 @@ export interface Transfer {
   createdAt: string
   downloadCount: number
   maxDownloads?: number | null
+  notifyEmail?: string | null
   totalSize: string
   passwordProtected: boolean
   encrypted: boolean
   virusScanned: boolean
   files: FileInfo[]
   expired?: boolean
+}
+
+export interface DownloadLogEntry {
+  id: string
+  createdAt: string
+  country?: string | null
+  browser?: string | null
+  os?: string | null
 }
 
 export interface TransferUploadResult {

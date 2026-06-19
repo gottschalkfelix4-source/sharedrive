@@ -1,7 +1,7 @@
-import { useCallback, useState } from 'react'
+import { useCallback } from 'react'
 import { useDropzone } from 'react-dropzone'
 import { motion, AnimatePresence } from 'framer-motion'
-import { Upload, Plus, FileIcon } from 'lucide-react'
+import { Upload, Plus, FolderUp } from 'lucide-react'
 import { cn, formatBytes, getFileIcon } from '@/lib/utils'
 
 interface UploadZoneProps {
@@ -9,6 +9,55 @@ interface UploadZoneProps {
   onFilesAdded: (files: File[]) => void
   onFileRemove: (index: number) => void
   maxSize?: number
+}
+
+// Forges webkitRelativePath onto Files pulled from drag-and-drop directory
+// entries, so downstream code can read file.webkitRelativePath uniformly
+// regardless of whether files came from drag-and-drop or a folder <input>.
+function withRelativePath(file: File, path: string): File {
+  Object.defineProperty(file, 'webkitRelativePath', { value: path, configurable: true })
+  return file
+}
+
+async function readAllEntries(reader: any): Promise<any[]> {
+  const entries: any[] = []
+  for (;;) {
+    const batch: any[] = await new Promise((resolve, reject) => reader.readEntries(resolve, reject))
+    if (batch.length === 0) break
+    entries.push(...batch)
+  }
+  return entries
+}
+
+async function walkEntry(entry: any, path: string): Promise<File[]> {
+  if (entry.isFile) {
+    const file: File = await new Promise((resolve, reject) => entry.file(resolve, reject))
+    return [withRelativePath(file, path + file.name)]
+  }
+  if (entry.isDirectory) {
+    const entries = await readAllEntries(entry.createReader())
+    const nested = await Promise.all(entries.map((e) => walkEntry(e, `${path}${entry.name}/`)))
+    return nested.flat()
+  }
+  return []
+}
+
+// Custom file extractor: when items support the File System Entries API
+// (drag-and-drop of folders), walk directories recursively to preserve
+// structure. Falls back to the plain file list otherwise.
+async function getFilesFromEvent(event: any): Promise<File[]> {
+  const items: any[] | undefined = event.dataTransfer?.items
+  if (items && items.length > 0 && typeof items[0].webkitGetAsEntry === 'function') {
+    const entries = Array.from(items)
+      .map((item: any) => item.webkitGetAsEntry())
+      .filter(Boolean)
+    if (entries.length > 0) {
+      const nested = await Promise.all(entries.map((entry: any) => walkEntry(entry, '')))
+      return nested.flat()
+    }
+  }
+  const fileList = event.dataTransfer?.files ?? event.target?.files
+  return fileList ? Array.from(fileList) : []
 }
 
 export function UploadZone({ files, onFilesAdded, onFileRemove, maxSize }: UploadZoneProps) {
@@ -23,6 +72,7 @@ export function UploadZone({ files, onFilesAdded, onFileRemove, maxSize }: Uploa
     onDrop,
     maxSize,
     multiple: true,
+    getFilesFromEvent,
   })
 
   return (
@@ -95,7 +145,9 @@ export function UploadZone({ files, onFilesAdded, onFileRemove, maxSize }: Uploa
               >
                 <span className="text-2xl flex-shrink-0">{getFileIcon(file.type)}</span>
                 <div className="flex-1 min-w-0">
-                  <p className="text-sm font-medium text-text-primary truncate">{file.name}</p>
+                  <p className="text-sm font-medium text-text-primary truncate">
+                    {(file as any).webkitRelativePath || file.name}
+                  </p>
                   <p className="text-xs text-text-muted">{formatBytes(file.size)}</p>
                 </div>
                 <button
@@ -108,16 +160,31 @@ export function UploadZone({ files, onFilesAdded, onFileRemove, maxSize }: Uploa
               </motion.div>
             ))}
 
-            <label className="flex items-center gap-2 p-3 rounded-xl border border-dashed border-border text-text-muted hover:border-border-strong hover:text-text-secondary cursor-pointer transition-colors text-sm">
-              <Plus size={16} />
-              Weitere Dateien hinzufügen
-              <input
-                type="file"
-                multiple
-                className="hidden"
-                onChange={(e) => e.target.files && onFilesAdded(Array.from(e.target.files))}
-              />
-            </label>
+            <div className="flex gap-2">
+              <label className="flex-1 flex items-center gap-2 p-3 rounded-xl border border-dashed border-border text-text-muted hover:border-border-strong hover:text-text-secondary cursor-pointer transition-colors text-sm">
+                <Plus size={16} />
+                Weitere Dateien
+                <input
+                  type="file"
+                  multiple
+                  className="hidden"
+                  onChange={(e) => e.target.files && onFilesAdded(Array.from(e.target.files))}
+                />
+              </label>
+              <label className="flex-1 flex items-center gap-2 p-3 rounded-xl border border-dashed border-border text-text-muted hover:border-border-strong hover:text-text-secondary cursor-pointer transition-colors text-sm">
+                <FolderUp size={16} />
+                Ordner hochladen
+                <input
+                  type="file"
+                  multiple
+                  // @ts-ignore — non-standard but supported attrs for folder selection
+                  webkitdirectory="true"
+                  directory="true"
+                  className="hidden"
+                  onChange={(e) => e.target.files && onFilesAdded(Array.from(e.target.files))}
+                />
+              </label>
+            </div>
           </motion.div>
         )}
       </AnimatePresence>

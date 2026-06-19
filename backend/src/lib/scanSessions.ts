@@ -1,5 +1,6 @@
 export interface ScanFile {
   name: string
+  relativePath?: string
   size: number
   mimeType: string
   storageKey: string
@@ -13,6 +14,7 @@ export interface PendingTransfer {
   passwordHash: string | null
   expiresAt: Date
   notifyEmail?: string
+  maxDownloads?: number | null
   totalSize: number
   files: ScanFile[]
 }

@@ -1,6 +1,6 @@
 import { useState } from 'react'
 import { motion, AnimatePresence } from 'framer-motion'
-import { Settings2, Lock, Mail, Calendar, MessageSquare, ChevronDown } from 'lucide-react'
+import { Settings2, Lock, Mail, Calendar, MessageSquare, ChevronDown, Hash } from 'lucide-react'
 import { Input, Textarea } from '@/components/ui/Input'
 import { Toggle } from '@/components/ui/Toggle'
 
@@ -11,6 +11,7 @@ interface UploadOptionsProps {
     password: string
     expiresInDays: number
     notifyEmail: string
+    maxDownloads: string
   }
   onChange: (key: string, value: string | number | boolean) => void
 }
@@ -19,6 +20,7 @@ export function UploadOptions({ options, onChange }: UploadOptionsProps) {
   const [open, setOpen] = useState(false)
   const [usePassword, setUsePassword] = useState(false)
   const [useNotify, setUseNotify] = useState(false)
+  const [useMaxDownloads, setUseMaxDownloads] = useState(false)
 
   return (
     <div className="border border-border rounded-xl overflow-hidden">
@@ -126,6 +128,33 @@ export function UploadOptions({ options, onChange }: UploadOptionsProps) {
                         value={options.notifyEmail}
                         onChange={(e) => onChange('notifyEmail', e.target.value)}
                         icon={<Mail size={15} />}
+                      />
+                    </motion.div>
+                  )}
+                </AnimatePresence>
+              </div>
+
+              <div className="space-y-3">
+                <Toggle
+                  checked={useMaxDownloads}
+                  onChange={(v) => { setUseMaxDownloads(v); if (!v) onChange('maxDownloads', '') }}
+                  label="Downloadlimit"
+                  description="Transfer nach N Downloads automatisch sperren"
+                />
+                <AnimatePresence>
+                  {useMaxDownloads && (
+                    <motion.div
+                      initial={{ opacity: 0, height: 0 }}
+                      animate={{ opacity: 1, height: 'auto' }}
+                      exit={{ opacity: 0, height: 0 }}
+                    >
+                      <Input
+                        type="number"
+                        min={1}
+                        placeholder="z. B. 5"
+                        value={options.maxDownloads}
+                        onChange={(e) => onChange('maxDownloads', e.target.value)}
+                        icon={<Hash size={15} />}
                       />
                     </motion.div>
                   )}

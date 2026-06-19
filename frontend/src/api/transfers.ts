@@ -1,5 +1,5 @@
 import { api } from './client'
-import type { Transfer, TransferUploadResult } from '../types'
+import type { Transfer, TransferUploadResult, DownloadLogEntry } from '../types'
 import { generateKey, exportKey, encryptChunk, CHUNK_SIZE } from '@/lib/e2e'
 
 export interface UploadOptions {
@@ -8,6 +8,7 @@ export interface UploadOptions {
   password?: string
   expiresInDays?: number
   notifyEmail?: string
+  maxDownloads?: number
   encrypted?: boolean
   onProgress?: (percent: number, speed: string, eta: string) => void
   onScanProgress?: (percent: number, currentFile: string | null) => void
@@ -135,11 +136,13 @@ export async function uploadTransfer(
     password:      options.password     || undefined,
     expiresInDays: options.expiresInDays,
     notifyEmail:   options.notifyEmail  || undefined,
+    maxDownloads:  options.maxDownloads || undefined,
     encrypted:     !!options.encrypted,
     files: files.map((f) => ({
-      name:     f.name,
-      size:     f.size,
-      mimeType: f.type || 'application/octet-stream',
+      name:         f.name,
+      relativePath: (f as any).webkitRelativePath || undefined,
+      size:         f.size,
+      mimeType:     f.type || 'application/octet-stream',
     })),
   })
 
@@ -210,6 +213,23 @@ export async function getMyTransfers(page = 1): Promise<{ transfers: Transfer[];
 
 export async function deleteTransfer(shortId: string): Promise<void> {
   await api.delete(`/transfers/${shortId}`)
+}
+
+export async function updateTransfer(
+  shortId: string,
+  data: { expiresAt?: string; maxDownloads?: number | null },
+): Promise<Transfer> {
+  const res = await api.patch(`/transfers/${shortId}`, data)
+  return res.data
+}
+
+export async function resendTransferLink(shortId: string, email: string): Promise<void> {
+  await api.post(`/transfers/${shortId}/resend`, { email })
+}
+
+export async function getTransferDownloads(shortId: string): Promise<{ downloads: DownloadLogEntry[] }> {
+  const res = await api.get(`/transfers/${shortId}/downloads`)
+  return res.data
 }
 
 export function getDownloadUrl(shortId: string, fileId: string): string {

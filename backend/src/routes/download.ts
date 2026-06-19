@@ -58,6 +58,7 @@ router.get('/:shortId', async (req, res, next) => {
       files: transfer.files.map((f) => ({
         id: f.id,
         name: f.name,
+        relativePath: f.relativePath,
         size: f.size.toString(),
         mimeType: f.mimeType,
       })),
@@ -86,7 +87,7 @@ router.get('/:shortId/zip', async (req, res, next) => {
 
     for (const file of transfer.files) {
       const stream = await getObjectStream(file.storageKey)
-      archive.append(stream as Readable, { name: file.name })
+      archive.append(stream as Readable, { name: file.relativePath || file.name })
     }
 
     await archive.finalize()

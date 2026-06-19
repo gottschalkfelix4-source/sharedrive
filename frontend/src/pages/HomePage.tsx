@@ -31,6 +31,7 @@ const defaultOptions = {
   password: '',
   expiresInDays: 7,
   notifyEmail: '',
+  maxDownloads: '',
   encrypted: false,
 }
 
@@ -94,6 +95,7 @@ export function HomePage() {
     try {
       const res = await uploadTransfer(files, {
         ...options,
+        maxDownloads: options.maxDownloads ? parseInt(options.maxDownloads) : undefined,
         onProgress: (percent, speed, eta) => setProgress({ percent, speed, eta }),
         onScanProgress: (percent, currentFile) => {
           setPhase('scanning')

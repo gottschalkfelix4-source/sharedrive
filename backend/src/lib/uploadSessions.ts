@@ -7,6 +7,7 @@ export interface FileSession {
   uploadId: string
   storageKey: string
   filename: string
+  relativePath?: string
   mimeType: string
   declaredSize: number
   parts: UploadPart[]
@@ -22,6 +23,7 @@ export interface TransferSession {
     passwordHash: string | null
     expiresAt: Date
     notifyEmail?: string
+    maxDownloads?: number | null
   }
   maxTransferSizeBytes: number
   encrypted: boolean

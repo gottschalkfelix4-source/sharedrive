@@ -303,7 +303,7 @@ export function DownloadPage() {
                 >
                   <span className="text-2xl">{getFileIcon(file.mimeType)}</span>
                   <div className="flex-1 min-w-0">
-                    <p className="text-sm font-medium text-text-primary truncate">{file.name}</p>
+                    <p className="text-sm font-medium text-text-primary truncate">{file.relativePath || file.name}</p>
                     <p className="text-xs text-text-muted">{formatBytes(file.size)}</p>
                   </div>
                   {!isExpired && !keyMissing && (
