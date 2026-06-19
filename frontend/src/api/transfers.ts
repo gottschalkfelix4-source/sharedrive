@@ -44,6 +44,8 @@ interface ScanStatusResponse {
   result?: TransferUploadResult
 }
 
+const settle = (ms: number) => new Promise<void>((r) => setTimeout(r, ms))
+
 // Polls the scan-status endpoint until the server reports a final outcome.
 async function pollScan(
   scanId: string,
@@ -58,12 +60,15 @@ async function pollScan(
         ? Math.min(99, Math.round((data.scannedBytes / data.totalBytes) * 100))
         : 0
       onProgress?.(pct, data.currentFile, data.phase || 'streaming')
-      await new Promise((r) => setTimeout(r, 700))
+      await new Promise((r) => setTimeout(r, 400))
       continue
     }
 
     if (data.status === 'clean' && data.result) {
       onProgress?.(100, null, 'streaming')
+      // Give the smoothed progress ring time to visually reach 100% before the
+      // caller swaps phases away — otherwise the result screen appears mid-animation.
+      await settle(650)
       return data.result
     }
 
@@ -189,6 +194,9 @@ export async function uploadTransfer(
 
   // ── 3. Finalize ───────────────────────────────────────────────────────────────
   const finalRes = await api.post(`/transfers/chunked/${shortId}/finalize`)
+  options.onProgress?.(100, '—', '0s')
+  // Let the smoothed upload ring visually reach 100% before switching phase.
+  await settle(400)
 
   if (finalRes.status === 202) {
     const { scanId } = finalRes.data as { scanId: string }
@@ -196,7 +204,6 @@ export async function uploadTransfer(
     return { ...result, encryptionKey: encKeyExported }
   }
 
-  options.onProgress?.(100, '—', '0s')
   return { ...finalRes.data, encryptionKey: encKeyExported }
 }
 

@@ -1,6 +1,7 @@
 import { motion } from 'framer-motion'
 import { Zap, Clock } from 'lucide-react'
 import { ProgressRing } from '@/components/ui/ProgressRing'
+import { useSmoothedPercent } from '@/lib/useSmoothedPercent'
 
 interface UploadProgressProps {
   percent: number
@@ -10,21 +11,18 @@ interface UploadProgressProps {
 }
 
 export function UploadProgress({ percent, speed, eta, fileCount }: UploadProgressProps) {
+  const displayPercent = Math.round(useSmoothedPercent(percent))
+
   return (
     <motion.div
       initial={{ opacity: 0, scale: 0.95 }}
       animate={{ opacity: 1, scale: 1 }}
       className="text-center space-y-6"
     >
-      <ProgressRing percent={percent} colorFrom="#6366f1" colorTo="#8b5cf6">
-        <motion.span
-          key={percent}
-          initial={{ opacity: 0, y: 4 }}
-          animate={{ opacity: 1, y: 0 }}
-          className="text-lg font-bold text-text-primary"
-        >
-          {percent}%
-        </motion.span>
+      <ProgressRing percent={displayPercent} colorFrom="#6366f1" colorTo="#8b5cf6">
+        <span className="text-lg font-bold text-text-primary">
+          {displayPercent}%
+        </span>
       </ProgressRing>
 
       <div>

@@ -2,6 +2,7 @@ import { motion } from 'framer-motion'
 import { ShieldCheck, ShieldOff, AlertCircle } from 'lucide-react'
 import { Button } from '@/components/ui/Button'
 import { ProgressRing } from '@/components/ui/ProgressRing'
+import { useSmoothedPercent } from '@/lib/useSmoothedPercent'
 
 interface VirusScanProgressProps {
   percent: number
@@ -12,6 +13,7 @@ interface VirusScanProgressProps {
 
 export function VirusScanProgress({ percent, currentFile, fileCount, phase = 'streaming' }: VirusScanProgressProps) {
   const analyzing = phase === 'analyzing'
+  const displayPercent = Math.round(useSmoothedPercent(percent))
 
   return (
     <motion.div
@@ -19,7 +21,7 @@ export function VirusScanProgress({ percent, currentFile, fileCount, phase = 'st
       animate={{ opacity: 1, scale: 1 }}
       className="text-center space-y-6"
     >
-      <ProgressRing percent={percent} colorFrom="#10b981" colorTo="#22d3ee" indeterminate={analyzing}>
+      <ProgressRing percent={displayPercent} colorFrom="#10b981" colorTo="#22d3ee" indeterminate={analyzing}>
         <motion.div
           animate={analyzing ? { scale: [1, 1.08, 1] } : { scale: 1 }}
           transition={analyzing ? { duration: 1.1, repeat: Infinity, ease: 'easeInOut' } : { duration: 0.3 }}
@@ -35,7 +37,7 @@ export function VirusScanProgress({ percent, currentFile, fileCount, phase = 'st
         <p className="text-sm text-text-muted mt-1 truncate px-4">
           {analyzing
             ? (currentFile ? `„${currentFile}“ wird analysiert…` : 'Wird analysiert…')
-            : (currentFile ? `„${currentFile}“ — ${percent}%` : `${percent}%`)}
+            : (currentFile ? `„${currentFile}“ — ${displayPercent}%` : `${displayPercent}%`)}
         </p>
       </div>
     </motion.div>

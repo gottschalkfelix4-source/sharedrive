@@ -56,7 +56,7 @@ export function ProgressRing({
             strokeDasharray={circumference}
             initial={false}
             animate={{ strokeDashoffset: circumference * (1 - percent / 100) }}
-            transition={{ type: 'spring', stiffness: 90, damping: 20, mass: 0.6 }}
+            transition={{ duration: 0 }}
           />
         )}
         <defs>
