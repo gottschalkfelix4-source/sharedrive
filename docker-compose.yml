@@ -43,6 +43,8 @@ services:
         condition: service_healthy
       minio:
         condition: service_started
+      clamav:
+        condition: service_started
     restart: unless-stopped
     networks:
       - sharedrive-net
@@ -89,6 +91,22 @@ services:
     networks:
       - sharedrive-net
 
+  clamav:
+    image: clamav/clamav:stable
+    container_name: sharedrive-clamav
+    environment:
+      # Raise stream/file limits well above the app's default 5 GB max file size
+      CLAMD_CONF_StreamMaxLength: 6144M
+      CLAMD_CONF_MaxFileSize: 6144M
+      CLAMD_CONF_MaxScanSize: 6144M
+      CLAMD_CONF_TCPSocket: 3310
+      CLAMD_CONF_TCPAddr: "0.0.0.0"
+    volumes:
+      - clamav_data:/var/lib/clamav
+    restart: unless-stopped
+    networks:
+      - sharedrive-net
+
 networks:
   sharedrive-net:
     driver: bridge
@@ -97,5 +115,6 @@ volumes:
   postgres_data:
   redis_data:
   minio_data:
+  clamav_data:
   caddy_data:
   caddy_config:

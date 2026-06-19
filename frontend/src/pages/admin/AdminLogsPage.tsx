@@ -7,7 +7,7 @@ import { ScrollText, RefreshCw, Search, ChevronLeft, ChevronRight } from 'lucide
 import { cn } from '@/lib/utils'
 
 const LEVELS = ['all', 'info', 'warn', 'error'] as const
-const CATEGORIES = ['all', 'upload', 'auth', 'download', 'system', 'error'] as const
+const CATEGORIES = ['all', 'upload', 'auth', 'download', 'system', 'error', 'security'] as const
 
 function levelBadge(level: string) {
   switch (level) {
@@ -23,6 +23,7 @@ function categoryBadge(cat: string) {
     case 'download': return 'text-violet-400'
     case 'auth':     return 'text-orange-400'
     case 'error':    return 'text-red-400'
+    case 'security': return 'text-rose-400'
     case 'system':   return 'text-slate-400'
     default:         return 'text-text-muted'
   }

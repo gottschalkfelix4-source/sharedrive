@@ -9,6 +9,7 @@ import { requireAuth, optionalAuth } from '../middleware/auth'
 import { AppError } from '../middleware/errorHandler'
 import { getSettings } from './settings'
 import { log } from '../services/logger'
+import { createScanSession, runTransferScan } from '../services/virusScan'
 import rateLimit from 'express-rate-limit'
 
 const router = Router()
@@ -111,48 +112,69 @@ router.post('/', uploadLimiter, optionalAuth, (req: Request, res: Response) => {
         const expiresAt = new Date()
         expiresAt.setDate(expiresAt.getDate() + (expiresInDays ?? retentionDays))
 
-        const transfer = await prisma.transfer.create({
-          data: {
-            shortId,
-            userId,
-            title,
-            message,
-            passwordHash,
-            expiresAt,
-            notifyEmail,
-            totalSize: BigInt(totalSize),
-            files: {
-              create: uploadedFiles.map((f) => ({
-                name: f.name,
-                size: BigInt(f.size),
-                mimeType: f.mimeType,
-                storageKey: f.storageKey,
-              })),
-            },
-          },
-          include: { files: true },
-        })
+        const scanEnabled = settings['security.virusScanEnabled'] !== 'false'
 
-        if (userId) {
-          await prisma.user.update({
-            where: { id: userId },
-            data: { storageUsed: { increment: BigInt(totalSize) } },
+        if (!scanEnabled) {
+          const transfer = await prisma.transfer.create({
+            data: {
+              shortId,
+              userId,
+              title,
+              message,
+              passwordHash,
+              expiresAt,
+              notifyEmail,
+              totalSize: BigInt(totalSize),
+              files: {
+                create: uploadedFiles.map((f) => ({
+                  name: f.name,
+                  size: BigInt(f.size),
+                  mimeType: f.mimeType,
+                  storageKey: f.storageKey,
+                })),
+              },
+            },
+            include: { files: true },
           })
+
+          if (userId) {
+            await prisma.user.update({
+              where: { id: userId },
+              data: { storageUsed: { increment: BigInt(totalSize) } },
+            })
+          }
+
+          await log('info', 'upload', `Transfer uploaded: ${transfer.shortId} — ${transfer.files.length} file(s), ${(totalSize / 1024 / 1024).toFixed(1)} MB`, {
+            userId: userId ?? undefined,
+            ip: req.ip,
+            fileCount: transfer.files.length,
+            totalSizeBytes: totalSize,
+          })
+
+          res.status(201).json({
+            shortId: transfer.shortId,
+            expiresAt: transfer.expiresAt,
+            fileCount: transfer.files.length,
+            totalSize: totalSize.toString(),
+          })
+          return
         }
 
-        await log('info', 'upload', `Transfer uploaded: ${transfer.shortId} — ${transfer.files.length} file(s), ${(totalSize / 1024 / 1024).toFixed(1)} MB`, {
-          userId: userId ?? undefined,
-          ip: req.ip,
-          fileCount: transfer.files.length,
-          totalSizeBytes: totalSize,
+        const scanId = nanoid(20)
+        createScanSession(scanId, {
+          shortId,
+          userId,
+          title,
+          message,
+          passwordHash,
+          expiresAt,
+          notifyEmail,
+          totalSize,
+          files: uploadedFiles,
         })
+        runTransferScan(scanId, req.ip)
 
-        res.status(201).json({
-          shortId: transfer.shortId,
-          expiresAt: transfer.expiresAt,
-          fileCount: transfer.files.length,
-          totalSize: totalSize.toString(),
-        })
+        res.status(202).json({ scanId })
       } catch (err) {
         await log('error', 'upload', `Upload failed: ${(err as Error).message}`, { ip: req.ip })
         console.error('Transfer creation error:', err)

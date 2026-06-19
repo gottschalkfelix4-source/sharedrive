@@ -10,6 +10,67 @@ export interface UploadOptions {
   notifyEmail?: string
   encrypted?: boolean
   onProgress?: (percent: number, speed: string, eta: string) => void
+  onScanProgress?: (percent: number, currentFile: string | null) => void
+}
+
+export class VirusFoundError extends Error {
+  virus: string
+  infectedFile?: string
+  constructor(virus: string, infectedFile?: string) {
+    super(virus)
+    this.name = 'VirusFoundError'
+    this.virus = virus
+    this.infectedFile = infectedFile
+  }
+}
+
+export class ScanError extends Error {
+  constructor(message: string) {
+    super(message)
+    this.name = 'ScanError'
+  }
+}
+
+interface ScanStatusResponse {
+  status: 'scanning' | 'clean' | 'infected' | 'error'
+  scannedBytes: number
+  totalBytes: number
+  currentFile: string | null
+  virus?: string
+  infectedFile?: string
+  message?: string
+  result?: TransferUploadResult
+}
+
+// Polls the scan-status endpoint until the server reports a final outcome.
+async function pollScan(
+  scanId: string,
+  onProgress?: (percent: number, currentFile: string | null) => void,
+): Promise<TransferUploadResult> {
+  for (;;) {
+    const res = await api.get<ScanStatusResponse>(`/scan/${scanId}`)
+    const data = res.data
+
+    if (data.status === 'scanning') {
+      const pct = data.totalBytes > 0
+        ? Math.min(99, Math.round((data.scannedBytes / data.totalBytes) * 100))
+        : 0
+      onProgress?.(pct, data.currentFile)
+      await new Promise((r) => setTimeout(r, 700))
+      continue
+    }
+
+    if (data.status === 'clean' && data.result) {
+      onProgress?.(100, null)
+      return data.result
+    }
+
+    if (data.status === 'infected') {
+      throw new VirusFoundError(data.virus || 'Unbekannte Bedrohung', data.infectedFile)
+    }
+
+    throw new ScanError(data.message || 'Virenscan fehlgeschlagen')
+  }
 }
 
 // ─── Chunked upload ───────────────────────────────────────────────────────────
@@ -124,8 +185,14 @@ export async function uploadTransfer(
 
   // ── 3. Finalize ───────────────────────────────────────────────────────────────
   const finalRes = await api.post(`/transfers/chunked/${shortId}/finalize`)
-  options.onProgress?.(100, '—', '0s')
 
+  if (finalRes.status === 202) {
+    const { scanId } = finalRes.data as { scanId: string }
+    const result = await pollScan(scanId, options.onScanProgress)
+    return { ...result, encryptionKey: encKeyExported }
+  }
+
+  options.onProgress?.(100, '—', '0s')
   return { ...finalRes.data, encryptionKey: encKeyExported }
 }
 

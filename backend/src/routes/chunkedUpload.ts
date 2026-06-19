@@ -13,6 +13,7 @@ import { getSettings } from './settings'
 import { log } from '../services/logger'
 import { uploadSessions } from '../lib/uploadSessions'
 import type { FileSession } from '../lib/uploadSessions'
+import { createScanSession, runTransferScan } from '../services/virusScan'
 import rateLimit from 'express-rate-limit'
 
 const router = Router()
@@ -183,50 +184,74 @@ router.post('/:shortId/finalize', async (req: Request, res: Response, next: Next
       return res.status(413).json({ error: 'Transfer size exceeds limit' })
     }
 
-    const transfer = await prisma.transfer.create({
-      data: {
-        shortId:      session.shortId,
-        userId:       session.userId,
-        title:        session.meta.title,
-        message:      session.meta.message,
-        passwordHash: session.meta.passwordHash,
-        expiresAt:    session.meta.expiresAt,
-        notifyEmail:  session.meta.notifyEmail,
-        totalSize:    BigInt(totalSize),
-        encrypted:    session.encrypted,
-        files: {
-          create: uploadedFiles.map((f) => ({
-            name:       f.name,
-            size:       BigInt(f.size),
-            mimeType:   f.mimeType,
-            storageKey: f.storageKey,
-          })),
-        },
-      },
-      include: { files: true },
-    })
+    // E2E-encrypted transfers can't be scanned (the server never has the key),
+    // so they skip straight to publishing — same as when the admin disabled scanning.
+    const settings = await getSettings()
+    const scanEnabled = settings['security.virusScanEnabled'] !== 'false'
 
-    if (session.userId) {
-      await prisma.user.update({
-        where: { id: session.userId },
-        data:  { storageUsed: { increment: BigInt(totalSize) } },
+    if (session.encrypted || !scanEnabled) {
+      const transfer = await prisma.transfer.create({
+        data: {
+          shortId:      session.shortId,
+          userId:       session.userId,
+          title:        session.meta.title,
+          message:      session.meta.message,
+          passwordHash: session.meta.passwordHash,
+          expiresAt:    session.meta.expiresAt,
+          notifyEmail:  session.meta.notifyEmail,
+          totalSize:    BigInt(totalSize),
+          encrypted:    session.encrypted,
+          files: {
+            create: uploadedFiles.map((f) => ({
+              name:       f.name,
+              size:       BigInt(f.size),
+              mimeType:   f.mimeType,
+              storageKey: f.storageKey,
+            })),
+          },
+        },
+        include: { files: true },
+      })
+
+      if (session.userId) {
+        await prisma.user.update({
+          where: { id: session.userId },
+          data:  { storageUsed: { increment: BigInt(totalSize) } },
+        })
+      }
+
+      uploadSessions.delete(shortId)
+
+      await log('info', 'upload',
+        `Chunked transfer: ${transfer.shortId} — ${transfer.files.length} file(s), ` +
+        `${(totalSize / 1024 / 1024).toFixed(1)} MB`,
+        { userId: session.userId ?? undefined, ip: req.ip },
+      )
+
+      return res.status(201).json({
+        shortId:   transfer.shortId,
+        expiresAt: transfer.expiresAt,
+        fileCount: transfer.files.length,
+        totalSize: totalSize.toString(),
       })
     }
 
-    uploadSessions.delete(shortId)
-
-    await log('info', 'upload',
-      `Chunked transfer: ${transfer.shortId} — ${transfer.files.length} file(s), ` +
-      `${(totalSize / 1024 / 1024).toFixed(1)} MB`,
-      { userId: session.userId ?? undefined, ip: req.ip },
-    )
-
-    res.status(201).json({
-      shortId:   transfer.shortId,
-      expiresAt: transfer.expiresAt,
-      fileCount: transfer.files.length,
-      totalSize: totalSize.toString(),
+    const scanId = nanoid(20)
+    createScanSession(scanId, {
+      shortId:      session.shortId,
+      userId:       session.userId,
+      title:        session.meta.title,
+      message:      session.meta.message,
+      passwordHash: session.meta.passwordHash,
+      expiresAt:    session.meta.expiresAt,
+      notifyEmail:  session.meta.notifyEmail,
+      totalSize,
+      files:        uploadedFiles,
     })
+    uploadSessions.delete(shortId)
+    runTransferScan(scanId, req.ip)
+
+    return res.status(202).json({ scanId })
   } catch (err) {
     next(err)
   }

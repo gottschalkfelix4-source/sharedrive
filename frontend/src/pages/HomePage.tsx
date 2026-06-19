@@ -5,17 +5,25 @@ import { useQuery } from '@tanstack/react-query'
 import { UploadZone } from '@/components/upload/UploadZone'
 import { UploadOptions } from '@/components/upload/UploadOptions'
 import { UploadProgress } from '@/components/upload/UploadProgress'
+import { VirusScanProgress, VirusScanResult } from '@/components/upload/VirusScanProgress'
 import { SuccessScreen } from '@/components/upload/SuccessScreen'
 import { Button } from '@/components/ui/Button'
 import { Card } from '@/components/ui/Card'
 import { MatrixRain } from '@/components/effects/MatrixRain'
 import { LockAnimation } from '@/components/effects/LockAnimation'
 import { Toggle } from '@/components/ui/Toggle'
-import { uploadTransfer, type UploadOptions as UOpts } from '@/api/transfers'
+import { uploadTransfer, VirusFoundError, ScanError, type UploadOptions as UOpts } from '@/api/transfers'
 import { getDiskStats } from '@/api/settings'
 import toast from 'react-hot-toast'
 
-type Phase = 'idle' | 'uploading' | 'success'
+type Phase = 'idle' | 'uploading' | 'scanning' | 'blocked' | 'success'
+
+interface ScanErrorState {
+  type: 'infected' | 'error'
+  virus?: string
+  infectedFile?: string
+  message?: string
+}
 
 const defaultOptions = {
   title: '',
@@ -59,6 +67,8 @@ export function HomePage() {
   const [options, setOptions] = useState(defaultOptions)
   const [phase, setPhase] = useState<Phase>('idle')
   const [progress, setProgress] = useState({ percent: 0, speed: '0 KB/s', eta: '…' })
+  const [scanProgress, setScanProgress] = useState({ percent: 0, currentFile: null as string | null })
+  const [scanError, setScanError] = useState<ScanErrorState | null>(null)
   const [result, setResult] = useState<any>(null)
   const [showLockAnim, setShowLockAnim] = useState(false)
 
@@ -85,12 +95,24 @@ export function HomePage() {
       const res = await uploadTransfer(files, {
         ...options,
         onProgress: (percent, speed, eta) => setProgress({ percent, speed, eta }),
+        onScanProgress: (percent, currentFile) => {
+          setPhase('scanning')
+          setScanProgress({ percent, currentFile })
+        },
       })
       setResult(res)
       setPhase('success')
     } catch (err: any) {
-      toast.error(err?.response?.data?.error || 'Upload fehlgeschlagen')
-      setPhase('idle')
+      if (err instanceof VirusFoundError) {
+        setScanError({ type: 'infected', virus: err.virus, infectedFile: err.infectedFile })
+        setPhase('blocked')
+      } else if (err instanceof ScanError) {
+        setScanError({ type: 'error', message: err.message })
+        setPhase('blocked')
+      } else {
+        toast.error(err?.response?.data?.error || 'Upload fehlgeschlagen')
+        setPhase('idle')
+      }
     }
   }
 
@@ -99,6 +121,8 @@ export function HomePage() {
     setOptions(defaultOptions)
     setPhase('idle')
     setResult(null)
+    setScanProgress({ percent: 0, currentFile: null })
+    setScanError(null)
   }
 
   const totalSize = files.reduce((sum, f) => sum + f.size, 0)
@@ -216,6 +240,28 @@ export function HomePage() {
                   speed={progress.speed}
                   eta={progress.eta}
                   fileCount={files.length}
+                />
+              </motion.div>
+            )}
+
+            {phase === 'scanning' && (
+              <motion.div key="scanning" initial={{ opacity: 0 }} animate={{ opacity: 1 }} exit={{ opacity: 0 }}>
+                <VirusScanProgress
+                  percent={scanProgress.percent}
+                  currentFile={scanProgress.currentFile}
+                  fileCount={files.length}
+                />
+              </motion.div>
+            )}
+
+            {phase === 'blocked' && scanError && (
+              <motion.div key="blocked" initial={{ opacity: 0 }} animate={{ opacity: 1 }} exit={{ opacity: 0 }}>
+                <VirusScanResult
+                  type={scanError.type}
+                  virus={scanError.virus}
+                  infectedFile={scanError.infectedFile}
+                  message={scanError.message}
+                  onReset={handleReset}
                 />
               </motion.div>
             )}

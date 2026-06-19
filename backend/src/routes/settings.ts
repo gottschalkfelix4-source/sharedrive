@@ -25,6 +25,7 @@ export const DEFAULT_SETTINGS: Record<string, string> = {
   'email.from': 'noreply@sharedrive.local',
   'security.registrationEnabled': 'true',
   'security.requireEmailVerification': 'false',
+  'security.virusScanEnabled': 'true',
   'appearance.primaryColor': '#6366f1',
   'appearance.logoUrl': '',
   'appearance.faviconUrl': '',

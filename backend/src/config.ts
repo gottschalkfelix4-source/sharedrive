@@ -15,4 +15,9 @@ export const config = {
   redis: {
     url: process.env.REDIS_URL || 'redis://redis:6379',
   },
+
+  clamav: {
+    host: process.env.CLAMAV_HOST || 'clamav',
+    port: parseInt(process.env.CLAMAV_PORT || '3310'),
+  },
 }
