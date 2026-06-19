@@ -3,6 +3,7 @@ import fs from 'fs'
 import { prisma } from '../lib/prisma'
 import { requireAdmin, requireAuth } from '../middleware/auth'
 import { sendTestEmail } from '../services/email'
+import { DEFAULT_S3_SETTINGS, reloadStorageConfig, testS3Connection } from '../lib/minio'
 
 const router = Router()
 
@@ -16,6 +17,7 @@ export const DEFAULT_SETTINGS: Record<string, string> = {
   'storage.userStorageQuotaBytes': '0',
   'storage.retentionDaysAnonymous': '7',
   'storage.retentionDaysRegistered': '30',
+  ...DEFAULT_S3_SETTINGS,
   'email.enabled': 'false',
   'email.host': '',
   'email.port': '587',
@@ -51,9 +53,10 @@ export async function getSettings(): Promise<Record<string, string>> {
 router.get('/', requireAdmin, async (req, res, next) => {
   try {
     const settings = await getSettings()
-    // Mask password fields for security
+    // Mask password/secret fields for security
     const safe = { ...settings }
     if (safe['email.password']) safe['email.password'] = '••••••••'
+    if (safe['storage.s3SecretKey']) safe['storage.s3SecretKey'] = '••••••••'
     res.json({ settings: safe })
   } catch (err) {
     next(err)
@@ -71,9 +74,40 @@ router.put('/', requireAdmin, async (req, res, next) => {
       })
     )
     await Promise.all(ops)
+    // Storage backend may have changed — drop the cached S3 client so it's rebuilt on next use.
+    if (Object.keys(updates).some((k) => k.startsWith('storage.s3'))) reloadStorageConfig()
     res.json({ success: true })
   } catch (err) {
     next(err)
+  }
+})
+
+router.post('/test-s3', requireAdmin, async (req, res, next) => {
+  try {
+    const { endpoint, port, useSSL, region, bucket, accessKey, secretKey } = req.body
+
+    if (!endpoint || !bucket || !accessKey) {
+      return res.status(400).json({ error: 'Endpoint, Bucket und Access Key sind erforderlich' })
+    }
+
+    // Secret key may be the masked placeholder if the admin didn't change it — fall back to the saved value.
+    let resolvedSecretKey = secretKey
+    if (!resolvedSecretKey || resolvedSecretKey.includes('•')) {
+      resolvedSecretKey = await getSetting('storage.s3SecretKey')
+    }
+
+    await testS3Connection({
+      endpoint,
+      port: parseInt(port) || 443,
+      useSSL: useSSL !== false,
+      region: region || undefined,
+      bucket,
+      accessKey,
+      secretKey: resolvedSecretKey,
+    })
+    res.json({ success: true })
+  } catch (err: any) {
+    res.status(500).json({ error: err?.message || 'Verbindung fehlgeschlagen' })
   }
 })
 

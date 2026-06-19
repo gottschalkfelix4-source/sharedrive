@@ -19,6 +19,20 @@ export async function testEmail(to: string): Promise<void> {
   await api.post('/settings/test-email', { to })
 }
 
+export interface S3TestPayload {
+  endpoint: string
+  port: number
+  useSSL: boolean
+  region?: string
+  bucket: string
+  accessKey: string
+  secretKey: string
+}
+
+export async function testS3Connection(payload: S3TestPayload): Promise<void> {
+  await api.post('/settings/test-s3', payload)
+}
+
 export async function uploadAsset(type: 'logo' | 'favicon', file: File): Promise<string> {
   const form = new FormData()
   form.append('file', file)
