@@ -252,7 +252,9 @@ router.put('/users/:id', async (req, res, next) => {
 
     const user = await prisma.user.update({
       where: { id: req.params.id },
-      data: { role },
+      // Bumping tokenVersion invalidates any JWT already issued to this user,
+      // so a role change takes effect immediately instead of after up to 7 days.
+      data: { role, tokenVersion: { increment: 1 } },
       select: { id: true, email: true, username: true, role: true },
     })
     res.json({ user })

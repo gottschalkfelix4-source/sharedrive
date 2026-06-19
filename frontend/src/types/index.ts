@@ -5,6 +5,7 @@ export interface User {
   role: 'USER' | 'ADMIN'
   storageUsed: string
   createdAt: string
+  totpEnabled?: boolean
 }
 
 export interface FileInfo {

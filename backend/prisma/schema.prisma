@@ -16,6 +16,12 @@ model User {
   emailVerified            Boolean   @default(false)
   emailVerificationToken   String?   @unique
   emailVerificationExpiry  DateTime?
+  passwordResetToken       String?   @unique
+  passwordResetExpiry      DateTime?
+  tokenVersion             Int       @default(0)
+  totpSecret               String?
+  totpEnabled              Boolean   @default(false)
+  totpBackupCodes          String[]  @default([])
   storageUsed              BigInt    @default(0)
   createdAt                DateTime  @default(now())
   updatedAt                DateTime  @updatedAt
@@ -23,6 +29,7 @@ model User {
 
   @@index([email])
   @@index([emailVerificationToken])
+  @@index([passwordResetToken])
 }
 
 enum Role {

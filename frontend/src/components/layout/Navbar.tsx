@@ -1,6 +1,6 @@
 import { Link, useLocation, useNavigate } from 'react-router-dom'
 import { motion } from 'framer-motion'
-import { Upload, LayoutDashboard, Shield, LogOut, LogIn, UserPlus, Menu, X } from 'lucide-react'
+import { Upload, LayoutDashboard, Shield, LogOut, LogIn, UserPlus, Menu, X, Settings } from 'lucide-react'
 import { useState, useEffect } from 'react'
 import { useAuthStore } from '@/store/authStore'
 import { Button } from '@/components/ui/Button'
@@ -31,6 +31,7 @@ export function Navbar() {
 
   const links = [
     ...(user ? [{ to: '/dashboard', label: 'Meine Transfers', icon: <LayoutDashboard size={16} /> }] : []),
+    ...(user ? [{ to: '/account', label: 'Konto', icon: <Settings size={16} /> }] : []),
     ...(user?.role === 'ADMIN' ? [{ to: '/admin', label: 'Admin', icon: <Shield size={16} /> }] : []),
   ]
 
