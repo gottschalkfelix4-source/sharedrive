@@ -12,6 +12,7 @@ export function createScanSession(scanId: string, pending: PendingTransfer): voi
     pending,
     scannedBytes: 0,
     currentFile: pending.files[0]?.name ?? null,
+    phase: 'streaming',
     status: 'scanning',
     createdAt: new Date(),
   })
@@ -30,10 +31,12 @@ export async function runTransferScan(scanId: string, ip?: string): Promise<void
     let scannedSoFar = 0
     for (const file of pending.files) {
       session.currentFile = file.name
+      session.phase = 'streaming'
       const stream = await getObjectStream(file.storageKey)
       const baseline = scannedSoFar
-      const result = await scanReadable(stream, (scannedBytes) => {
+      const result = await scanReadable(stream, (scannedBytes, phase) => {
         session.scannedBytes = baseline + scannedBytes
+        session.phase = phase
       })
       scannedSoFar += file.size
       session.scannedBytes = scannedSoFar

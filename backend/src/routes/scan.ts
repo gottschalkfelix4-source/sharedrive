@@ -13,6 +13,7 @@ router.get('/:scanId', (req: Request, res: Response) => {
     scannedBytes: session.scannedBytes,
     totalBytes: session.pending.totalSize,
     currentFile: session.currentFile,
+    phase: session.phase,
     virus: session.virus,
     infectedFile: session.infectedFile,
     message: session.errorMessage,

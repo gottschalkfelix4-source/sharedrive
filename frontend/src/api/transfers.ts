@@ -11,7 +11,7 @@ export interface UploadOptions {
   maxDownloads?: number
   encrypted?: boolean
   onProgress?: (percent: number, speed: string, eta: string) => void
-  onScanProgress?: (percent: number, currentFile: string | null) => void
+  onScanProgress?: (percent: number, currentFile: string | null, phase: 'streaming' | 'analyzing') => void
 }
 
 export class VirusFoundError extends Error {
@@ -37,6 +37,7 @@ interface ScanStatusResponse {
   scannedBytes: number
   totalBytes: number
   currentFile: string | null
+  phase?: 'streaming' | 'analyzing'
   virus?: string
   infectedFile?: string
   message?: string
@@ -46,7 +47,7 @@ interface ScanStatusResponse {
 // Polls the scan-status endpoint until the server reports a final outcome.
 async function pollScan(
   scanId: string,
-  onProgress?: (percent: number, currentFile: string | null) => void,
+  onProgress?: (percent: number, currentFile: string | null, phase: 'streaming' | 'analyzing') => void,
 ): Promise<TransferUploadResult> {
   for (;;) {
     const res = await api.get<ScanStatusResponse>(`/scan/${scanId}`)
@@ -56,13 +57,13 @@ async function pollScan(
       const pct = data.totalBytes > 0
         ? Math.min(99, Math.round((data.scannedBytes / data.totalBytes) * 100))
         : 0
-      onProgress?.(pct, data.currentFile)
+      onProgress?.(pct, data.currentFile, data.phase || 'streaming')
       await new Promise((r) => setTimeout(r, 700))
       continue
     }
 
     if (data.status === 'clean' && data.result) {
-      onProgress?.(100, null)
+      onProgress?.(100, null, 'streaming')
       return data.result
     }
 

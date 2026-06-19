@@ -6,9 +6,12 @@ interface VirusScanProgressProps {
   percent: number
   currentFile: string | null
   fileCount: number
+  phase?: 'streaming' | 'analyzing'
 }
 
-export function VirusScanProgress({ percent, currentFile, fileCount }: VirusScanProgressProps) {
+export function VirusScanProgress({ percent, currentFile, fileCount, phase = 'streaming' }: VirusScanProgressProps) {
+  const analyzing = phase === 'analyzing'
+
   return (
     <motion.div
       initial={{ opacity: 0, scale: 0.95 }}
@@ -28,7 +31,8 @@ export function VirusScanProgress({ percent, currentFile, fileCount }: VirusScan
             strokeLinecap="round"
             strokeDasharray={2 * Math.PI * 42}
             strokeDashoffset={2 * Math.PI * 42 * (1 - percent / 100)}
-            transition={{ duration: 0.5 }}
+            animate={analyzing ? { opacity: [1, 0.35, 1] } : { opacity: 1 }}
+            transition={analyzing ? { duration: 1.3, repeat: Infinity, ease: 'easeInOut' } : { duration: 0.5 }}
           />
           <defs>
             <linearGradient id="scanGrad" x1="0%" y1="0%" x2="100%" y2="0%">
@@ -47,7 +51,9 @@ export function VirusScanProgress({ percent, currentFile, fileCount }: VirusScan
           {fileCount} Datei{fileCount > 1 ? 'en werden' : ' wird'} auf Viren geprüft…
         </p>
         <p className="text-sm text-text-muted mt-1 truncate px-4">
-          {currentFile ? `„${currentFile}“ — ${percent}%` : `${percent}%`}
+          {analyzing
+            ? (currentFile ? `„${currentFile}“ wird analysiert…` : 'Wird analysiert…')
+            : (currentFile ? `„${currentFile}“ — ${percent}%` : `${percent}%`)}
         </p>
       </div>
     </motion.div>

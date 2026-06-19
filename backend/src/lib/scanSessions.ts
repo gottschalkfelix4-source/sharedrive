@@ -34,6 +34,7 @@ export interface ScanSession {
   pending: PendingTransfer
   scannedBytes: number
   currentFile: string | null
+  phase: 'streaming' | 'analyzing'
   status: ScanStatus
   virus?: string
   infectedFile?: string

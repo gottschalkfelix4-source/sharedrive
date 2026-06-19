@@ -12,9 +12,11 @@ const SCAN_TIMEOUT_MS = 10 * 60 * 1000 // large files can take a while to stream
 // Scans a readable stream via clamd's INSTREAM protocol:
 // zINSTREAM\0, then <4-byte BE length><chunk> pairs, terminated by a zero-length chunk.
 // Response is "stream: OK", "stream: <name> FOUND", or "stream: <reason> ERROR".
+export type ScanPhase = 'streaming' | 'analyzing'
+
 export function scanReadable(
   source: NodeJS.ReadableStream,
-  onProgress?: (scannedBytes: number) => void
+  onProgress?: (scannedBytes: number, phase: ScanPhase) => void
 ): Promise<ScanResult> {
   return new Promise((resolve) => {
     const socket = net.createConnection({ host: config.clamav.host, port: config.clamav.port })
@@ -52,13 +54,16 @@ export function scanReadable(
         socket.write(Buffer.concat([lenBuf, chunk]), () => {
           if (settled) return
           scanned += chunk.length
-          onProgress?.(scanned)
+          onProgress?.(scanned, 'streaming')
           ;(source as unknown as { resume?: () => void }).resume?.()
         })
       })
 
       source.on('end', () => {
         if (settled) return
+        // All bytes are now with clamd; the remaining wait is for it to finish
+        // analyzing (e.g. unpacking archives), not for more data to transfer.
+        onProgress?.(scanned, 'analyzing')
         socket.write(Buffer.alloc(4)) // zero-length chunk = EOF
       })
 

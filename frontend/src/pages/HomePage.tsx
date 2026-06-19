@@ -68,7 +68,7 @@ export function HomePage() {
   const [options, setOptions] = useState(defaultOptions)
   const [phase, setPhase] = useState<Phase>('idle')
   const [progress, setProgress] = useState({ percent: 0, speed: '0 KB/s', eta: '…' })
-  const [scanProgress, setScanProgress] = useState({ percent: 0, currentFile: null as string | null })
+  const [scanProgress, setScanProgress] = useState({ percent: 0, currentFile: null as string | null, phase: 'streaming' as 'streaming' | 'analyzing' })
   const [scanError, setScanError] = useState<ScanErrorState | null>(null)
   const [result, setResult] = useState<any>(null)
   const [showLockAnim, setShowLockAnim] = useState(false)
@@ -97,9 +97,9 @@ export function HomePage() {
         ...options,
         maxDownloads: options.maxDownloads ? parseInt(options.maxDownloads) : undefined,
         onProgress: (percent, speed, eta) => setProgress({ percent, speed, eta }),
-        onScanProgress: (percent, currentFile) => {
+        onScanProgress: (percent, currentFile, scanPhase) => {
           setPhase('scanning')
-          setScanProgress({ percent, currentFile })
+          setScanProgress({ percent, currentFile, phase: scanPhase })
         },
       })
       setResult(res)
@@ -123,7 +123,7 @@ export function HomePage() {
     setOptions(defaultOptions)
     setPhase('idle')
     setResult(null)
-    setScanProgress({ percent: 0, currentFile: null })
+    setScanProgress({ percent: 0, currentFile: null, phase: 'streaming' })
     setScanError(null)
   }
 
@@ -252,6 +252,7 @@ export function HomePage() {
                   percent={scanProgress.percent}
                   currentFile={scanProgress.currentFile}
                   fileCount={files.length}
+                  phase={scanProgress.phase}
                 />
               </motion.div>
             )}
