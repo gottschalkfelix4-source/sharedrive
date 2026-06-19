@@ -54,6 +54,7 @@ router.get('/:shortId', async (req, res, next) => {
       totalSize: transfer.totalSize.toString(),
       passwordProtected: !!transfer.passwordHash,
       encrypted: transfer.encrypted,
+      virusScanned: transfer.virusScanned,
       files: transfer.files.map((f) => ({
         id: f.id,
         name: f.name,

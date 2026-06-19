@@ -250,6 +250,12 @@ export function DownloadPage() {
                   E2E verschlüsselt
                 </Badge>
               )}
+              {transfer.virusScanned && (
+                <Badge variant="success" className="gap-1">
+                  <ShieldCheck size={11} />
+                  Virenfrei
+                </Badge>
+              )}
             </div>
           </div>
 

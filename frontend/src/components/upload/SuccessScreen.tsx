@@ -11,10 +11,11 @@ interface SuccessScreenProps {
   fileCount: number
   totalSize: string
   encryptionKey?: string
+  virusScanned?: boolean
   onReset: () => void
 }
 
-export function SuccessScreen({ shortId, expiresAt, fileCount, totalSize, encryptionKey, onReset }: SuccessScreenProps) {
+export function SuccessScreen({ shortId, expiresAt, fileCount, totalSize, encryptionKey, virusScanned, onReset }: SuccessScreenProps) {
   const [copied, setCopied] = useState(false)
   // If E2E encrypted, embed the key in the URL fragment (never sent to server)
   const url = encryptionKey
@@ -55,12 +56,20 @@ export function SuccessScreen({ shortId, expiresAt, fileCount, totalSize, encryp
         <p className="text-text-muted mt-1">
           {fileCount} Datei{fileCount > 1 ? 'en' : ''} · {formatBytes(totalSize)} · läuft ab {formatRelative(expiresAt)}
         </p>
-        {encryptionKey && (
-          <div className="flex justify-center mt-2">
-            <Badge variant="info" className="gap-1.5">
-              <ShieldCheck size={11} />
-              Ende-zu-Ende verschlüsselt
-            </Badge>
+        {(encryptionKey || virusScanned) && (
+          <div className="flex justify-center gap-2 mt-2 flex-wrap">
+            {encryptionKey && (
+              <Badge variant="info" className="gap-1.5">
+                <ShieldCheck size={11} />
+                Ende-zu-Ende verschlüsselt
+              </Badge>
+            )}
+            {virusScanned && (
+              <Badge variant="success" className="gap-1.5">
+                <ShieldCheck size={11} />
+                Virenfrei (ClamAV-geprüft)
+              </Badge>
+            )}
           </div>
         )}
       </div>

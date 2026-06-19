@@ -156,6 +156,7 @@ router.post('/', uploadLimiter, optionalAuth, (req: Request, res: Response) => {
             expiresAt: transfer.expiresAt,
             fileCount: transfer.files.length,
             totalSize: totalSize.toString(),
+            virusScanned: false,
           })
           return
         }

@@ -201,6 +201,7 @@ router.post('/:shortId/finalize', async (req: Request, res: Response, next: Next
           notifyEmail:  session.meta.notifyEmail,
           totalSize:    BigInt(totalSize),
           encrypted:    session.encrypted,
+          virusScanned: false,
           files: {
             create: uploadedFiles.map((f) => ({
               name:       f.name,
@@ -229,10 +230,11 @@ router.post('/:shortId/finalize', async (req: Request, res: Response, next: Next
       )
 
       return res.status(201).json({
-        shortId:   transfer.shortId,
-        expiresAt: transfer.expiresAt,
-        fileCount: transfer.files.length,
-        totalSize: totalSize.toString(),
+        shortId:      transfer.shortId,
+        expiresAt:    transfer.expiresAt,
+        fileCount:    transfer.files.length,
+        totalSize:    totalSize.toString(),
+        virusScanned: false,
       })
     }
 

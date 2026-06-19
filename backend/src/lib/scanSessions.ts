@@ -24,6 +24,7 @@ export interface ScanResultPayload {
   expiresAt: Date
   fileCount: number
   totalSize: string
+  virusScanned: boolean
 }
 
 export interface ScanSession {

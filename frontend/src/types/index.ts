@@ -25,6 +25,7 @@ export interface Transfer {
   totalSize: string
   passwordProtected: boolean
   encrypted: boolean
+  virusScanned: boolean
   files: FileInfo[]
   expired?: boolean
 }
@@ -34,6 +35,7 @@ export interface TransferUploadResult {
   expiresAt: string
   fileCount: number
   totalSize: string
+  virusScanned: boolean
   encryptionKey?: string  // base64url AES-256-GCM key, present when encrypted=true
 }
 

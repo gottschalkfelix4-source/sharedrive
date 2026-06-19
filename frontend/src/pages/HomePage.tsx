@@ -274,6 +274,7 @@ export function HomePage() {
                   fileCount={result.fileCount}
                   totalSize={result.totalSize}
                   encryptionKey={result.encryptionKey}
+                  virusScanned={result.virusScanned}
                   onReset={handleReset}
                 />
               </motion.div>

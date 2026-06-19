@@ -75,6 +75,7 @@ export async function runTransferScan(scanId: string, ip?: string): Promise<void
         notifyEmail: pending.notifyEmail,
         totalSize: BigInt(pending.totalSize),
         encrypted: false,
+        virusScanned: true,
         files: {
           create: pending.files.map((f) => ({
             name: f.name,
@@ -108,6 +109,7 @@ export async function runTransferScan(scanId: string, ip?: string): Promise<void
       expiresAt: transfer.expiresAt,
       fileCount: transfer.files.length,
       totalSize: pending.totalSize.toString(),
+      virusScanned: true,
     }
   } catch (err) {
     await deleteObjects(pending.files.map((f) => f.storageKey)).catch(() => {})
