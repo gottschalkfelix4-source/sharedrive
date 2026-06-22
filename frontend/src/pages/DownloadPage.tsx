@@ -1,10 +1,10 @@
-import { useState, useMemo } from 'react'
+import { useState, useMemo, useEffect } from 'react'
 import { useParams } from 'react-router-dom'
 import { useQuery } from '@tanstack/react-query'
 import { motion } from 'framer-motion'
 import { Download, Lock, FileIcon, Archive, Clock, AlertCircle, ShieldCheck, ShieldOff } from 'lucide-react'
 import { getTransfer, getDownloadUrl, getZipUrl } from '@/api/transfers'
-import { importKey, decryptToBlob, decryptStream } from '@/lib/e2e'
+import { importKey, decryptText, decryptToBlob, decryptStream } from '@/lib/e2e'
 import { Button } from '@/components/ui/Button'
 import { Input } from '@/components/ui/Input'
 import { Badge } from '@/components/ui/Badge'
@@ -37,6 +37,28 @@ export function DownloadPage() {
     enabled: !!shortId,
     retry: false,
   })
+
+  // For E2E transfers, title/message/filenames are stored encrypted — decrypt them
+  // client-side once the key (from the URL fragment) and the transfer data are available.
+  const [decryptedMeta, setDecryptedMeta] = useState<{ title?: string; message?: string; names: Record<string, string> }>({ names: {} })
+
+  useEffect(() => {
+    if (!data?.encrypted || !encKeyRaw) return
+    let cancelled = false
+    ;(async () => {
+      const key = await importKey(encKeyRaw)
+      const title = data.title ? await decryptText(key, data.title).catch(() => undefined) : undefined
+      const message = data.message ? await decryptText(key, data.message).catch(() => undefined) : undefined
+      const names: Record<string, string> = {}
+      for (const f of data.files) {
+        names[f.id] = await decryptText(key, f.name).catch(() => f.name)
+      }
+      if (!cancelled) setDecryptedMeta({ title, message, names })
+    })()
+    return () => { cancelled = true }
+  }, [data, encKeyRaw])
+
+  const getFileName = (fileId: string, fallback: string) => decryptedMeta.names[fileId] ?? fallback
 
   const handlePasswordSubmit = (e: React.FormEvent) => {
     e.preventDefault()
@@ -158,6 +180,10 @@ export function DownloadPage() {
   const canDecrypt = isEncrypted && !!encKeyRaw
   const keyMissing = isEncrypted && !encKeyRaw
 
+  // While encrypted, never fall back to the raw ciphertext for display.
+  const displayTitle = isEncrypted ? (decryptedMeta.title ?? 'Geteilter Transfer') : (transfer.title || 'Geteilter Transfer')
+  const displayMessage = isEncrypted ? decryptedMeta.message : transfer.message
+
   return (
     <div className="min-h-screen">
       {/* Background glow */}
@@ -173,10 +199,10 @@ export function DownloadPage() {
               <Download size={28} className="text-white" />
             </div>
             <h1 className="text-2xl font-bold text-text-primary">
-              {transfer.title || 'Geteilter Transfer'}
+              {displayTitle}
             </h1>
-            {transfer.message && (
-              <p className="text-text-muted text-sm mt-2 italic">"{transfer.message}"</p>
+            {displayMessage && (
+              <p className="text-text-muted text-sm mt-2 italic">"{displayMessage}"</p>
             )}
             <div className="flex items-center justify-center gap-3 mt-3 flex-wrap">
               <Badge variant={isExpired ? 'danger' : 'success'}>
@@ -231,7 +257,9 @@ export function DownloadPage() {
             </div>
 
             <div className="divide-y divide-border">
-              {transfer.files.map((file: any, i: number) => (
+              {transfer.files.map((file: any, i: number) => {
+                const fileName = getFileName(file.id, isEncrypted ? 'Verschlüsselte Datei' : file.name)
+                return (
                 <motion.div
                   key={file.id}
                   initial={{ opacity: 0, x: -10 }}
@@ -241,7 +269,7 @@ export function DownloadPage() {
                 >
                   <span className="text-2xl">{getFileIcon(file.mimeType)}</span>
                   <div className="flex-1 min-w-0">
-                    <p className="text-sm font-medium text-text-primary truncate">{file.name}</p>
+                    <p className="text-sm font-medium text-text-primary truncate">{fileName}</p>
                     <p className="text-xs text-text-muted">{formatBytes(file.size)}</p>
                   </div>
                   {!isExpired && !keyMissing && (
@@ -251,13 +279,14 @@ export function DownloadPage() {
                       icon={decrypting === file.id ? undefined : <Download size={13} />}
                       loading={decrypting === file.id}
                       disabled={decrypting !== null}
-                      onClick={() => handleDownloadFile(file.id, file.name, file.size)}
+                      onClick={() => handleDownloadFile(file.id, fileName, file.size)}
                     >
                       {decrypting === file.id ? 'Entschlüsseln…' : 'Herunterladen'}
                     </Button>
                   )}
                 </motion.div>
-              ))}
+                )
+              })}
             </div>
           </div>
 
@@ -269,7 +298,11 @@ export function DownloadPage() {
               disabled={decrypting !== null}
               onClick={
                 transfer.files.length === 1 || isEncrypted
-                  ? () => handleDownloadFile(transfer.files[0].id, transfer.files[0].name, transfer.files[0].size)
+                  ? () => handleDownloadFile(
+                      transfer.files[0].id,
+                      getFileName(transfer.files[0].id, isEncrypted ? 'Verschlüsselte Datei' : transfer.files[0].name),
+                      transfer.files[0].size,
+                    )
                   : handleDownloadAll
               }
             >

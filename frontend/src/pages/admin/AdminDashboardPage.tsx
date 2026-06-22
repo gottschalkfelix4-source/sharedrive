@@ -156,7 +156,7 @@ export function AdminDashboardPage() {
                   <div key={t.shortId} className="flex items-center gap-4 px-6 py-3">
                     <div className="flex-1 min-w-0">
                       <p className="text-sm font-medium text-text-primary truncate">
-                        {t.title || `Transfer ${t.shortId}`}
+                        {t.encrypted ? '🔒 Verschlüsselter Transfer' : (t.title || `Transfer ${t.shortId}`)}
                       </p>
                       <p className="text-xs text-text-muted">
                         {t.uploaderUsername ? `@${t.uploaderUsername}` : 'Anonym'} · {formatBytes(t.totalSize)} · {t.fileCount} Dateien

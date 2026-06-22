@@ -83,8 +83,12 @@ services:
     env_file: .env
     volumes:
       - minio_data:/data
-    ports:
-      - "9001:9001"
+    # Console (port 9001) is intentionally NOT published to the host — it gives
+    # full, unauthenticated-by-default access to every raw object in the bucket,
+    # bypassing all app-level access control and encryption checks entirely.
+    # To access it, tunnel instead of opening the port:
+    #   ssh -L 9001:localhost:9001 user@your-server
+    # then browse http://localhost:9001 locally.
     restart: unless-stopped
     networks:
       - sharedrive-net

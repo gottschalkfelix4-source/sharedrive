@@ -1,6 +1,7 @@
 import { Router } from 'express'
 import bcrypt from 'bcryptjs'
 import archiver from 'archiver'
+import rateLimit from 'express-rate-limit'
 import { Readable } from 'stream'
 import { prisma } from '../lib/prisma'
 import { getObjectStream } from '../lib/minio'
@@ -18,6 +19,11 @@ function encryptedFileSize(plaintextSize: number): number {
 }
 
 const router = Router()
+
+// Bounds password-guessing against passwordHash — generous enough for normal
+// multi-file downloads, tight enough to make brute-forcing impractical per IP.
+const downloadLimiter = rateLimit({ windowMs: 15 * 60 * 1000, max: 100, standardHeaders: true, legacyHeaders: false })
+router.use(downloadLimiter)
 
 async function getTransferOrThrow(shortId: string, password?: string) {
   const transfer = await prisma.transfer.findUnique({
@@ -105,7 +111,8 @@ router.get('/:shortId/zip', async (req, res, next) => {
     await log('info', 'download', `ZIP downloaded: ${transfer.shortId}`, { ip: req.ip })
 
     if (transfer.notifyEmail) {
-      sendDownloadNotification(transfer.notifyEmail, transfer.shortId, transfer.title).catch(
+      // transfer.title is ciphertext when encrypted — the server can't read it, so don't leak it into the email
+      sendDownloadNotification(transfer.notifyEmail, transfer.shortId, transfer.encrypted ? null : transfer.title).catch(
         console.error
       )
     }
@@ -127,8 +134,11 @@ router.get('/:shortId/files/:fileId', async (req, res, next) => {
     const contentLength = transfer.encrypted
       ? encryptedFileSize(Number(file.size))
       : Number(file.size)
+    // file.name is ciphertext when encrypted — the frontend decrypts it client-side and
+    // ignores this header for that flow; fall back to a neutral name for direct/curl access.
+    const dispositionName = transfer.encrypted ? `encrypted-${file.id}.bin` : file.name
     res.setHeader('Content-Type', file.mimeType || 'application/octet-stream')
-    res.setHeader('Content-Disposition', `attachment; filename="${encodeURIComponent(file.name)}"`)
+    res.setHeader('Content-Disposition', `attachment; filename="${encodeURIComponent(dispositionName)}"`)
     res.setHeader('Content-Length', String(contentLength))
     stream.pipe(res)
 
@@ -144,7 +154,7 @@ router.get('/:shortId/files/:fileId', async (req, res, next) => {
     await log('info', 'download', `File downloaded: ${transfer.shortId}`, { ip: req.ip })
 
     if (transfer.notifyEmail) {
-      sendDownloadNotification(transfer.notifyEmail, transfer.shortId, transfer.title).catch(console.error)
+      sendDownloadNotification(transfer.notifyEmail, transfer.shortId, transfer.encrypted ? null : transfer.title).catch(console.error)
     }
   } catch (err) {
     next(err)

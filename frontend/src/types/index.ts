@@ -50,6 +50,7 @@ export interface AdminStats {
 export interface AdminTransferRow {
   shortId: string
   title?: string | null
+  encrypted: boolean
   createdAt: string
   expiresAt: string
   totalSize: string

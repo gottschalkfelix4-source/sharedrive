@@ -97,8 +97,11 @@ export function DashboardPage() {
                   <div className="flex-1 min-w-0">
                     <div className="flex items-center gap-2 flex-wrap">
                       <p className="text-sm font-medium text-text-primary truncate">
-                        {t.title || `Transfer ${t.shortId}`}
+                        {t.encrypted ? `Verschlüsselter Transfer ${t.shortId}` : (t.title || `Transfer ${t.shortId}`)}
                       </p>
+                      {t.encrypted && (
+                        <Badge variant="info">🔒 E2E</Badge>
+                      )}
                       {t.passwordProtected && (
                         <Badge variant="warning">🔒 Passwort</Badge>
                       )}

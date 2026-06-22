@@ -200,6 +200,7 @@ router.get('/mine', requireAuth, async (req, res, next) => {
         maxDownloads: t.maxDownloads,
         totalSize: t.totalSize.toString(),
         passwordProtected: !!t.passwordHash,
+        encrypted: t.encrypted,
         files: t.files.map((f) => ({ id: f.id, name: f.name, size: f.size.toString(), mimeType: f.mimeType })),
       })),
       total,

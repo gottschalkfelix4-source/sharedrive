@@ -72,8 +72,12 @@ router.post('/init', uploadLimiter, optionalAuth, async (req: Request, res: Resp
     const fileSessions: [string, FileSession][] = []
 
     for (const file of files) {
-      const token      = nanoid(16)
-      const storageKey = `transfers/${shortId}/${nanoid(8)}/${file.name}`
+      const token = nanoid(16)
+      // When encrypted, file.name is ciphertext sent by the client — keep it out of the
+      // storage path (random key only) so the object path itself reveals nothing either.
+      const storageKey = encrypted
+        ? `transfers/${shortId}/${nanoid(8)}/${nanoid(16)}`
+        : `transfers/${shortId}/${nanoid(8)}/${file.name}`
       const uploadId   = await initiateMultipartUpload(
         storageKey,
         file.mimeType || 'application/octet-stream',

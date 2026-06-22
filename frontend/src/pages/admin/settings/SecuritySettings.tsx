@@ -1,11 +1,17 @@
 import { useState, useEffect } from 'react'
 import { useQuery, useMutation } from '@tanstack/react-query'
-import { Save, Lock } from 'lucide-react'
+import { Save, Lock, ShieldAlert } from 'lucide-react'
 import { getAllSettings, updateSettings } from '@/api/settings'
 import { Button } from '@/components/ui/Button'
 import { Toggle } from '@/components/ui/Toggle'
 import { Spinner } from '@/components/ui/Spinner'
 import toast from 'react-hot-toast'
+
+// True when this very page was loaded over plain HTTP on a non-loopback host —
+// the only thing that actually tells us whether the admin's connection is sniffable.
+const isInsecureConnection =
+  window.location.protocol !== 'https:' &&
+  !['localhost', '127.0.0.1', '[::1]'].includes(window.location.hostname)
 
 export function SecuritySettings() {
   const { data: settings, isLoading } = useQuery({ queryKey: ['admin-settings'], queryFn: getAllSettings })
@@ -47,6 +53,20 @@ export function SecuritySettings() {
           <p className="text-xs text-text-muted">Registrierung und Zugangskontrolle</p>
         </div>
       </div>
+
+      {isInsecureConnection && (
+        <div className="flex gap-3 rounded-xl border border-red-500/30 bg-red-500/10 px-4 py-3 text-sm text-red-300">
+          <ShieldAlert size={18} className="flex-shrink-0 mt-0.5" />
+          <div>
+            <p className="font-medium">Diese Instanz läuft ohne HTTPS</p>
+            <p className="text-red-400/80 mt-0.5 text-xs leading-relaxed">
+              Logins, Passwörter und vor allem die Ende-zu-Ende-Verschlüsselungsschlüssel (im Link nach <code className="bg-white/10 px-1 rounded">#key=…</code>)
+              werden unverschlüsselt übertragen und können von jedem im Netzwerkpfad mitgelesen werden — das hebelt die Verschlüsselung faktisch aus.
+              Aktiviere HTTPS im Setup-Assistenten (Domain & SSL) oder über deinen eigenen Reverse Proxy.
+            </p>
+          </div>
+        </div>
+      )}
 
       <div className="space-y-4">
         <div className="p-4 bg-bg-elevated rounded-xl border border-border">

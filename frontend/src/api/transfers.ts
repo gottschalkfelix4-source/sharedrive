@@ -1,6 +1,6 @@
 import { api } from './client'
 import type { Transfer, TransferUploadResult } from '../types'
-import { generateKey, exportKey, encryptChunk, CHUNK_SIZE } from '@/lib/e2e'
+import { generateKey, exportKey, encryptChunk, encryptText, CHUNK_SIZE } from '@/lib/e2e'
 
 export interface UploadOptions {
   title?: string
@@ -67,19 +67,29 @@ export async function uploadTransfer(
     encKeyExported = await exportKey(encKey)
   }
 
+  // When E2E is on, metadata (title/message/filenames) is encrypted too, so the
+  // server/DB never sees anything readable — only file size, count and dates remain.
+  const title = options.title || undefined
+  const message = options.message || undefined
+  const metaTitle = encKey && title ? await encryptText(encKey, title) : title
+  const metaMessage = encKey && message ? await encryptText(encKey, message) : message
+  const metaFiles = await Promise.all(
+    files.map(async (f) => ({
+      name:     encKey ? await encryptText(encKey, f.name) : f.name,
+      size:     f.size,
+      mimeType: f.type || 'application/octet-stream',
+    }))
+  )
+
   // ── 1. Init ──────────────────────────────────────────────────────────────────
   const initRes = await api.post('/transfers/chunked/init', {
-    title:         options.title        || undefined,
-    message:       options.message      || undefined,
+    title:         metaTitle,
+    message:       metaMessage,
     password:      options.password     || undefined,
     expiresInDays: options.expiresInDays,
     notifyEmail:   options.notifyEmail  || undefined,
     encrypted:     !!options.encrypted,
-    files: files.map((f) => ({
-      name:     f.name,
-      size:     f.size,
-      mimeType: f.type || 'application/octet-stream',
-    })),
+    files: metaFiles,
   })
 
   const { shortId, fileTokens } = initRes.data as { shortId: string; fileTokens: string[] }

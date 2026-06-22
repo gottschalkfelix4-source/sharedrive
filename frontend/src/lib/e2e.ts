@@ -16,21 +16,43 @@ export async function generateKey(): Promise<CryptoKey> {
   return crypto.subtle.generateKey({ name: ALGO, length: 256 }, true, ['encrypt', 'decrypt'])
 }
 
-export async function exportKey(key: CryptoKey): Promise<string> {
-  const raw = await crypto.subtle.exportKey('raw', key)
-  // base64url (no padding)
-  return btoa(String.fromCharCode(...new Uint8Array(raw)))
+function toBase64Url(bytes: Uint8Array): string {
+  return btoa(String.fromCharCode(...bytes))
     .replace(/\+/g, '-').replace(/\//g, '_').replace(/=/g, '')
 }
 
-export async function importKey(base64url: string): Promise<CryptoKey> {
+function fromBase64Url(base64url: string): Uint8Array<ArrayBuffer> {
   const b64 = base64url.replace(/-/g, '+').replace(/_/g, '/')
   const padded = b64 + '='.repeat((4 - (b64.length % 4)) % 4)
   const chars = atob(padded)
   // new Uint8Array(length) produces Uint8Array<ArrayBuffer> — required by subtle.importKey
   const raw = new Uint8Array(chars.length)
   for (let i = 0; i < chars.length; i++) raw[i] = chars.charCodeAt(i)
+  return raw
+}
+
+export async function exportKey(key: CryptoKey): Promise<string> {
+  const raw = await crypto.subtle.exportKey('raw', key)
+  return toBase64Url(new Uint8Array(raw))
+}
+
+export async function importKey(base64url: string): Promise<CryptoKey> {
+  const raw = fromBase64Url(base64url)
   return crypto.subtle.importKey('raw', raw, { name: ALGO, length: 256 }, false, ['encrypt', 'decrypt'])
+}
+
+// Encrypt a short UTF-8 string (filename, title, message) — used so metadata
+// is just as opaque to the server/DB as the file content itself.
+export async function encryptText(key: CryptoKey, text: string): Promise<string> {
+  const bytes = new TextEncoder().encode(text)
+  const enc = await encryptChunk(key, bytes as Uint8Array<ArrayBuffer>)
+  return toBase64Url(enc)
+}
+
+export async function decryptText(key: CryptoKey, base64url: string): Promise<string> {
+  const enc = fromBase64Url(base64url)
+  const dec = await decryptChunk(key, enc)
+  return new TextDecoder().decode(dec)
 }
 
 export async function encryptChunk(key: CryptoKey, plaintext: Uint8Array<ArrayBuffer>): Promise<Uint8Array<ArrayBuffer>> {

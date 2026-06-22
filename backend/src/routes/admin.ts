@@ -66,6 +66,7 @@ router.get('/stats', async (req, res, next) => {
       recentTransfers: recentTransfers.map((t) => ({
         shortId: t.shortId,
         title: t.title,
+        encrypted: t.encrypted,
         createdAt: t.createdAt,
         expiresAt: t.expiresAt,
         totalSize: t.totalSize.toString(),
@@ -112,6 +113,7 @@ router.get('/transfers', async (req, res, next) => {
       transfers: transfers.map((t) => ({
         shortId: t.shortId,
         title: t.title,
+        encrypted: t.encrypted,
         createdAt: t.createdAt,
         expiresAt: t.expiresAt,
         totalSize: t.totalSize.toString(),

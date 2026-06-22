@@ -91,8 +91,8 @@ export function AdminFilesPage() {
                       className="hover:bg-white/[0.02] transition-colors"
                     >
                       <td className="px-4 py-3">
-                        <p className="font-medium text-text-primary truncate max-w-[180px]">
-                          {t.title || `Transfer ${t.shortId.slice(0, 8)}`}
+                        <p className="font-medium text-text-primary truncate max-w-[180px] flex items-center gap-1.5">
+                          {t.encrypted ? `🔒 Verschlüsselter Transfer` : (t.title || `Transfer ${t.shortId.slice(0, 8)}`)}
                         </p>
                         <p className="text-xs text-text-muted">{t.shortId} · {t.fileCount} Dateien</p>
                       </td>
