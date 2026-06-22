@@ -5,6 +5,7 @@ import fs from 'fs'
 import http from 'http'
 import { prisma, reconnectPrisma } from '../lib/prisma'
 import { AppError } from '../middleware/errorHandler'
+import { passwordSchema } from '../lib/validation'
 
 const ENV_PATH = '/app/.env'
 
@@ -157,7 +158,7 @@ router.post('/ssl', async (req, res, next) => {
 const setupSchema = z.object({
   email:    z.string().email(),
   username: z.string().min(3).max(32).regex(/^[a-zA-Z0-9_-]+$/),
-  password: z.string().min(8).max(128),
+  password: passwordSchema,
   baseUrl:  z.string().url().optional(),
 })
 

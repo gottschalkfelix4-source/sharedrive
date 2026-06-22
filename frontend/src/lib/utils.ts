@@ -55,6 +55,18 @@ export function cn(...classes: (string | undefined | false | null)[]): string {
   return classes.filter(Boolean).join(' ')
 }
 
+export const PASSWORD_HINT = 'Mind. 8 Zeichen, ein Großbuchstabe, eine Zahl, ein Sonderzeichen'
+
+// Mirrors the backend's passwordSchema (backend/src/lib/validation.ts) so users
+// get the same feedback before submitting instead of round-tripping to the server.
+export function getPasswordError(password: string): string | null {
+  if (password.length < 8) return 'Mindestens 8 Zeichen'
+  if (!/[A-Z]/.test(password)) return 'Mindestens ein Großbuchstabe'
+  if (!/[0-9]/.test(password)) return 'Mindestens eine Zahl'
+  if (!/[^A-Za-z0-9]/.test(password)) return 'Mindestens ein Sonderzeichen'
+  return null
+}
+
 export function copyToClipboard(text: string): Promise<void> {
   return navigator.clipboard.writeText(text)
 }

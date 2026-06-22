@@ -6,6 +6,7 @@ import { register } from '@/api/auth'
 import { useAuthStore } from '@/store/authStore'
 import { Button } from '@/components/ui/Button'
 import { Input } from '@/components/ui/Input'
+import { getPasswordError, PASSWORD_HINT } from '@/lib/utils'
 import toast from 'react-hot-toast'
 
 export function RegisterPage() {
@@ -17,8 +18,9 @@ export function RegisterPage() {
 
   const handleSubmit = async (e: React.FormEvent) => {
     e.preventDefault()
-    if (form.password.length < 8) {
-      toast.error('Passwort muss mindestens 8 Zeichen lang sein')
+    const passwordError = getPasswordError(form.password)
+    if (passwordError) {
+      toast.error(passwordError)
       return
     }
     setLoading(true)
@@ -112,10 +114,11 @@ export function RegisterPage() {
             <Input
               label="Passwort"
               type="password"
-              placeholder="Mind. 8 Zeichen"
+              placeholder="Passwort"
               value={form.password}
               onChange={(e) => setForm({ ...form, password: e.target.value })}
               icon={<Lock size={15} />}
+              hint={PASSWORD_HINT}
               required
             />
             <Button type="submit" className="w-full" size="lg" loading={loading} icon={<UserPlus size={17} />}>

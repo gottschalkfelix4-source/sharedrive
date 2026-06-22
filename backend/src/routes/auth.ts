@@ -13,6 +13,7 @@ import { AppError } from '../middleware/errorHandler'
 import { getSetting } from './settings'
 import { sendVerificationEmail, sendPasswordResetEmail } from '../services/email'
 import { log } from '../services/logger'
+import { passwordSchema } from '../lib/validation'
 
 const router = Router()
 
@@ -21,7 +22,7 @@ const authLimiter = rateLimit({ windowMs: 15 * 60 * 1000, max: 20 })
 const registerSchema = z.object({
   email: z.string().email(),
   username: z.string().min(3).max(32).regex(/^[a-zA-Z0-9_-]+$/),
-  password: z.string().min(8).max(128),
+  password: passwordSchema,
 })
 
 const loginSchema = z.object({
@@ -35,12 +36,12 @@ const forgotPasswordSchema = z.object({
 
 const resetPasswordSchema = z.object({
   token: z.string().min(1),
-  password: z.string().min(8).max(128),
+  password: passwordSchema,
 })
 
 const changePasswordSchema = z.object({
   currentPassword: z.string(),
-  newPassword: z.string().min(8).max(128),
+  newPassword: passwordSchema,
 })
 
 const twoFactorVerifySchema = z.object({

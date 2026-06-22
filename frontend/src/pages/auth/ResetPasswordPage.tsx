@@ -6,6 +6,7 @@ import { resetPassword } from '@/api/auth'
 import { useAuthStore } from '@/store/authStore'
 import { Button } from '@/components/ui/Button'
 import { Input } from '@/components/ui/Input'
+import { getPasswordError, PASSWORD_HINT } from '@/lib/utils'
 import toast from 'react-hot-toast'
 
 export function ResetPasswordPage() {
@@ -38,8 +39,9 @@ export function ResetPasswordPage() {
 
   const handleSubmit = async (e: React.FormEvent) => {
     e.preventDefault()
-    if (password.length < 8) {
-      toast.error('Passwort muss mindestens 8 Zeichen lang sein')
+    const passwordError = getPasswordError(password)
+    if (passwordError) {
+      toast.error(passwordError)
       return
     }
     if (password !== confirm) {
@@ -83,10 +85,11 @@ export function ResetPasswordPage() {
             <Input
               label="Neues Passwort"
               type="password"
-              placeholder="Mind. 8 Zeichen"
+              placeholder="Neues Passwort"
               value={password}
               onChange={(e) => setPassword(e.target.value)}
               icon={<Lock size={15} />}
+              hint={PASSWORD_HINT}
               required
             />
             <Input

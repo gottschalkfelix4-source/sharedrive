@@ -16,6 +16,7 @@ import { Input } from '@/components/ui/Input'
 import { Modal } from '@/components/ui/Modal'
 import { Badge } from '@/components/ui/Badge'
 import { Card } from '@/components/ui/Card'
+import { getPasswordError, PASSWORD_HINT } from '@/lib/utils'
 import toast from 'react-hot-toast'
 
 export function AccountSettingsPage() {
@@ -32,8 +33,9 @@ export function AccountSettingsPage() {
 
   const handleChangePassword = async (e: React.FormEvent) => {
     e.preventDefault()
-    if (pwForm.newPassword.length < 8) {
-      toast.error('Neues Passwort muss mindestens 8 Zeichen lang sein')
+    const passwordError = getPasswordError(pwForm.newPassword)
+    if (passwordError) {
+      toast.error(passwordError)
       return
     }
     if (pwForm.newPassword !== pwForm.confirm) {
@@ -177,10 +179,11 @@ export function AccountSettingsPage() {
             <Input
               label="Neues Passwort"
               type="password"
-              placeholder="Mind. 8 Zeichen"
+              placeholder="Neues Passwort"
               value={pwForm.newPassword}
               onChange={(e) => setPwForm({ ...pwForm, newPassword: e.target.value })}
               icon={<Lock size={15} />}
+              hint={PASSWORD_HINT}
               required
             />
             <Input

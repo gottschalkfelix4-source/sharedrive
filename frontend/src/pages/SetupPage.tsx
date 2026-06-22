@@ -11,6 +11,7 @@ import { useAuthStore } from '@/store/authStore'
 import { Button } from '@/components/ui/Button'
 import { Input } from '@/components/ui/Input'
 import { Toggle } from '@/components/ui/Toggle'
+import { getPasswordError, PASSWORD_HINT } from '@/lib/utils'
 import toast from 'react-hot-toast'
 
 // ── Password generation ──────────────────────────────────────
@@ -175,7 +176,8 @@ export function SetupPage() {
     if (!form.email.includes('@')) e.email = 'Gültige E-Mail erforderlich'
     if (form.username.length < 3) e.username = 'Mind. 3 Zeichen'
     if (!/^[a-zA-Z0-9_-]+$/.test(form.username)) e.username = 'Nur Buchstaben, Zahlen, - und _'
-    if (form.password.length < 8) e.password = 'Mind. 8 Zeichen'
+    const passwordError = getPasswordError(form.password)
+    if (passwordError) e.password = passwordError
     if (form.password !== form.confirm) e.confirm = 'Passwörter stimmen nicht überein'
     setErrors(e); return Object.keys(e).length === 0
   }
@@ -493,9 +495,9 @@ export function SetupPage() {
                 <Input label="Benutzername" placeholder="admin"
                   value={form.username} onChange={e => setForm({ ...form, username: e.target.value })}
                   error={errors.username} icon={<User size={15} />} />
-                <Input label="Passwort" type="password" placeholder="Mind. 8 Zeichen"
+                <Input label="Passwort" type="password" placeholder="Passwort"
                   value={form.password} onChange={e => setForm({ ...form, password: e.target.value })}
-                  error={errors.password} icon={<Lock size={15} />} />
+                  error={errors.password} icon={<Lock size={15} />} hint={PASSWORD_HINT} />
                 <Input label="Passwort bestätigen" type="password" placeholder="Passwort wiederholen"
                   value={form.confirm} onChange={e => setForm({ ...form, confirm: e.target.value })}
                   error={errors.confirm} icon={<Lock size={15} />} />
