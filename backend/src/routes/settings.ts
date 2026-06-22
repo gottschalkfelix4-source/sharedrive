@@ -1,7 +1,9 @@
 import { Router } from 'express'
+import fs from 'fs'
 import { prisma } from '../lib/prisma'
-import { requireAdmin } from '../middleware/auth'
+import { requireAdmin, requireAuth } from '../middleware/auth'
 import { sendTestEmail } from '../services/email'
+import { DEFAULT_S3_SETTINGS, reloadStorageConfig, testS3Connection } from '../lib/minio'
 
 const router = Router()
 
@@ -12,8 +14,10 @@ export const DEFAULT_SETTINGS: Record<string, string> = {
   'app.maxFilesPerTransfer': '100',
   'storage.maxFileSizeBytes': '5368709120',
   'storage.maxTransferSizeBytes': '10737418240',
+  'storage.userStorageQuotaBytes': '0',
   'storage.retentionDaysAnonymous': '7',
   'storage.retentionDaysRegistered': '30',
+  ...DEFAULT_S3_SETTINGS,
   'email.enabled': 'false',
   'email.host': '',
   'email.port': '587',
@@ -23,6 +27,7 @@ export const DEFAULT_SETTINGS: Record<string, string> = {
   'email.from': 'noreply@sharedrive.local',
   'security.registrationEnabled': 'true',
   'security.requireEmailVerification': 'false',
+  'security.virusScanEnabled': 'true',
   'appearance.primaryColor': '#6366f1',
   'appearance.logoUrl': '',
   'appearance.faviconUrl': '',
@@ -48,9 +53,10 @@ export async function getSettings(): Promise<Record<string, string>> {
 router.get('/', requireAdmin, async (req, res, next) => {
   try {
     const settings = await getSettings()
-    // Mask password fields for security
+    // Mask password/secret fields for security
     const safe = { ...settings }
     if (safe['email.password']) safe['email.password'] = '••••••••'
+    if (safe['storage.s3SecretKey']) safe['storage.s3SecretKey'] = '••••••••'
     res.json({ settings: safe })
   } catch (err) {
     next(err)
@@ -68,9 +74,40 @@ router.put('/', requireAdmin, async (req, res, next) => {
       })
     )
     await Promise.all(ops)
+    // Storage backend may have changed — drop the cached S3 client so it's rebuilt on next use.
+    if (Object.keys(updates).some((k) => k.startsWith('storage.s3'))) reloadStorageConfig()
     res.json({ success: true })
   } catch (err) {
     next(err)
+  }
+})
+
+router.post('/test-s3', requireAdmin, async (req, res, next) => {
+  try {
+    const { endpoint, port, useSSL, region, bucket, accessKey, secretKey } = req.body
+
+    if (!endpoint || !bucket || !accessKey) {
+      return res.status(400).json({ error: 'Endpoint, Bucket und Access Key sind erforderlich' })
+    }
+
+    // Secret key may be the masked placeholder if the admin didn't change it — fall back to the saved value.
+    let resolvedSecretKey = secretKey
+    if (!resolvedSecretKey || resolvedSecretKey.includes('•')) {
+      resolvedSecretKey = await getSetting('storage.s3SecretKey')
+    }
+
+    await testS3Connection({
+      endpoint,
+      port: parseInt(port) || 443,
+      useSSL: useSSL !== false,
+      region: region || undefined,
+      bucket,
+      accessKey,
+      secretKey: resolvedSecretKey,
+    })
+    res.json({ success: true })
+  } catch (err: any) {
+    res.status(500).json({ error: err?.message || 'Verbindung fehlgeschlagen' })
   }
 })
 
@@ -97,6 +134,7 @@ router.get('/public', async (req, res, next) => {
       registrationEnabled: settings['security.registrationEnabled'] === 'true',
       maxFileSizeBytes: parseInt(settings['storage.maxFileSizeBytes']),
       maxTransferSizeBytes: parseInt(settings['storage.maxTransferSizeBytes']),
+      userStorageQuotaBytes: parseInt(settings['storage.userStorageQuotaBytes'] || '0'),
     })
   } catch (err) {
     next(err)
@@ -110,6 +148,27 @@ router.get('/legal', async (req, res, next) => {
       privacyPolicy: settings['legal.privacyPolicy'] || '',
       imprint: settings['legal.imprint'] || '',
     })
+  } catch (err) {
+    next(err)
+  }
+})
+
+router.get('/disk-stats', async (req, res, next) => {
+  try {
+    const stats = fs.statfsSync('/')
+    const total = stats.blocks * stats.bsize
+    const free = stats.bfree * stats.bsize
+    const used = total - free
+    const pct = Math.round((used / total) * 100)
+
+    // Next expiring active transfer — tells users when space will be freed
+    const next = await prisma.transfer.findFirst({
+      where: { expiresAt: { gt: new Date() } },
+      orderBy: { expiresAt: 'asc' },
+      select: { expiresAt: true },
+    })
+
+    res.json({ total, used, free, pct, nextExpiryAt: next?.expiresAt ?? null })
   } catch (err) {
     next(err)
   }

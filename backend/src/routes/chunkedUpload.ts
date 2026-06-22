@@ -13,6 +13,8 @@ import { getSettings } from './settings'
 import { log } from '../services/logger'
 import { uploadSessions } from '../lib/uploadSessions'
 import type { FileSession } from '../lib/uploadSessions'
+import { createScanSession, runTransferScan } from '../services/virusScan'
+import { sendUploadConfirmationEmail } from '../services/email'
 import rateLimit from 'express-rate-limit'
 
 const router = Router()
@@ -41,7 +43,7 @@ router.post('/init', uploadLimiter, optionalAuth, async (req: Request, res: Resp
       ? parseInt(settings['storage.retentionDaysRegistered'])
       : parseInt(settings['storage.retentionDaysAnonymous'])
 
-    const { title, message, password, expiresInDays, notifyEmail, files, encrypted } = req.body
+    const { title, message, password, expiresInDays, notifyEmail, files, encrypted, maxDownloads } = req.body
 
     if (!Array.isArray(files) || files.length === 0) {
       return res.status(400).json({ error: 'No files provided' })
@@ -56,6 +58,15 @@ router.post('/init', uploadLimiter, optionalAuth, async (req: Request, res: Resp
       if (f.size > maxFileSizeBytes) {
         return res.status(413).json({ error: `File "${f.name}" exceeds max size` })
       }
+    }
+
+    let maxDownloadsValue: number | null = null
+    if (maxDownloads !== undefined && maxDownloads !== null && maxDownloads !== '') {
+      const parsed = parseInt(maxDownloads)
+      if (!Number.isFinite(parsed) || parsed < 1 || parsed > 100000) {
+        return res.status(400).json({ error: 'Invalid maxDownloads value' })
+      }
+      maxDownloadsValue = parsed
     }
 
     const shortId = nanoid(10)
@@ -87,6 +98,7 @@ router.post('/init', uploadLimiter, optionalAuth, async (req: Request, res: Resp
         uploadId,
         storageKey,
         filename:     file.name,
+        relativePath: file.relativePath || undefined,
         mimeType:     file.mimeType || 'application/octet-stream',
         declaredSize: file.size,
         parts:        [],
@@ -97,7 +109,7 @@ router.post('/init', uploadLimiter, optionalAuth, async (req: Request, res: Resp
       shortId,
       userId,
       files:                new Map(fileSessions),
-      meta:                 { title, message, passwordHash, expiresAt, notifyEmail },
+      meta:                 { title, message, passwordHash, expiresAt, notifyEmail, maxDownloads: maxDownloadsValue },
       maxTransferSizeBytes,
       encrypted:            !!encrypted,
       createdAt:            new Date(),
@@ -161,7 +173,7 @@ router.post('/:shortId/finalize', async (req: Request, res: Response, next: Next
     if (!session) return res.status(404).json({ error: 'Upload session not found or expired' })
 
     let totalSize = 0
-    const uploadedFiles: { name: string; size: number; mimeType: string; storageKey: string }[] = []
+    const uploadedFiles: { name: string; relativePath?: string; size: number; mimeType: string; storageKey: string }[] = []
 
     // Complete every multipart upload
     for (const [, fs] of session.files) {
@@ -171,10 +183,11 @@ router.post('/:shortId/finalize', async (req: Request, res: Response, next: Next
       await completeFileParts(fs.storageKey, fs.uploadId, fs.parts)
       totalSize += fs.declaredSize
       uploadedFiles.push({
-        name:       fs.filename,
-        size:       fs.declaredSize,
-        mimeType:   fs.mimeType,
-        storageKey: fs.storageKey,
+        name:         fs.filename,
+        relativePath: fs.relativePath,
+        size:         fs.declaredSize,
+        mimeType:     fs.mimeType,
+        storageKey:   fs.storageKey,
       })
     }
 
@@ -187,50 +200,84 @@ router.post('/:shortId/finalize', async (req: Request, res: Response, next: Next
       return res.status(413).json({ error: 'Transfer size exceeds limit' })
     }
 
-    const transfer = await prisma.transfer.create({
-      data: {
-        shortId:      session.shortId,
-        userId:       session.userId,
-        title:        session.meta.title,
-        message:      session.meta.message,
-        passwordHash: session.meta.passwordHash,
-        expiresAt:    session.meta.expiresAt,
-        notifyEmail:  session.meta.notifyEmail,
-        totalSize:    BigInt(totalSize),
-        encrypted:    session.encrypted,
-        files: {
-          create: uploadedFiles.map((f) => ({
-            name:       f.name,
-            size:       BigInt(f.size),
-            mimeType:   f.mimeType,
-            storageKey: f.storageKey,
-          })),
-        },
-      },
-      include: { files: true },
-    })
+    // E2E-encrypted transfers can't be scanned (the server never has the key),
+    // so they skip straight to publishing — same as when the admin disabled scanning.
+    const settings = await getSettings()
+    const scanEnabled = settings['security.virusScanEnabled'] !== 'false'
 
-    if (session.userId) {
-      await prisma.user.update({
-        where: { id: session.userId },
-        data:  { storageUsed: { increment: BigInt(totalSize) } },
+    if (session.encrypted || !scanEnabled) {
+      const transfer = await prisma.transfer.create({
+        data: {
+          shortId:      session.shortId,
+          userId:       session.userId,
+          title:        session.meta.title,
+          message:      session.meta.message,
+          passwordHash: session.meta.passwordHash,
+          expiresAt:    session.meta.expiresAt,
+          notifyEmail:  session.meta.notifyEmail,
+          maxDownloads: session.meta.maxDownloads ?? null,
+          totalSize:    BigInt(totalSize),
+          encrypted:    session.encrypted,
+          virusScanned: false,
+          files: {
+            create: uploadedFiles.map((f) => ({
+              name:         f.name,
+              relativePath: f.relativePath,
+              size:         BigInt(f.size),
+              mimeType:     f.mimeType,
+              storageKey:   f.storageKey,
+            })),
+          },
+        },
+        include: { files: true },
+      })
+
+      if (session.userId) {
+        await prisma.user.update({
+          where: { id: session.userId },
+          data:  { storageUsed: { increment: BigInt(totalSize) } },
+        })
+      }
+
+      uploadSessions.delete(shortId)
+
+      await log('info', 'upload',
+        `Chunked transfer: ${transfer.shortId} — ${transfer.files.length} file(s), ` +
+        `${(totalSize / 1024 / 1024).toFixed(1)} MB`,
+        { userId: session.userId ?? undefined, ip: req.ip },
+      )
+
+      if (transfer.notifyEmail) {
+        // transfer.title is ciphertext when encrypted — the server can't read it, so don't leak it into the email
+        sendUploadConfirmationEmail(transfer.notifyEmail, transfer.shortId, transfer.encrypted ? null : transfer.title, transfer.expiresAt).catch(console.error)
+      }
+
+      return res.status(201).json({
+        shortId:      transfer.shortId,
+        expiresAt:    transfer.expiresAt,
+        fileCount:    transfer.files.length,
+        totalSize:    totalSize.toString(),
+        virusScanned: false,
       })
     }
 
-    uploadSessions.delete(shortId)
-
-    await log('info', 'upload',
-      `Chunked transfer: ${transfer.shortId} — ${transfer.files.length} file(s), ` +
-      `${(totalSize / 1024 / 1024).toFixed(1)} MB`,
-      { userId: session.userId ?? undefined, ip: req.ip },
-    )
-
-    res.status(201).json({
-      shortId:   transfer.shortId,
-      expiresAt: transfer.expiresAt,
-      fileCount: transfer.files.length,
-      totalSize: totalSize.toString(),
+    const scanId = nanoid(20)
+    createScanSession(scanId, {
+      shortId:      session.shortId,
+      userId:       session.userId,
+      title:        session.meta.title,
+      message:      session.meta.message,
+      passwordHash: session.meta.passwordHash,
+      expiresAt:    session.meta.expiresAt,
+      notifyEmail:  session.meta.notifyEmail,
+      maxDownloads: session.meta.maxDownloads,
+      totalSize,
+      files:        uploadedFiles,
     })
+    uploadSessions.delete(shortId)
+    runTransferScan(scanId, req.ip)
+
+    return res.status(202).json({ scanId })
   } catch (err) {
     next(err)
   }

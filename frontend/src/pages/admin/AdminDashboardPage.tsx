@@ -1,14 +1,15 @@
 import { useQuery } from '@tanstack/react-query'
 import { motion } from 'framer-motion'
 import { Link } from 'react-router-dom'
-import { Users, Files, Download, HardDrive, TrendingUp, AlertCircle, RefreshCw } from 'lucide-react'
+import { Users, Files, Download, HardDrive, TrendingUp, AlertCircle, RefreshCw, Upload, Globe, ArrowDownToLine } from 'lucide-react'
 import {
   AreaChart, Area, XAxis, YAxis, CartesianGrid, Tooltip, ResponsiveContainer,
 } from 'recharts'
-import { getAdminStats } from '@/api/admin'
-import { StatCard } from '@/components/ui/Card'
+import { getAdminStats, getLiveStats } from '@/api/admin'
+import { StatCard, Card } from '@/components/ui/Card'
 import { Badge } from '@/components/ui/Badge'
 import { Button } from '@/components/ui/Button'
+import { UploadMap } from '@/components/admin/UploadMap'
 import { formatBytes, formatRelative } from '@/lib/utils'
 
 function SkeletonCard() {
@@ -50,6 +51,12 @@ export function AdminDashboardPage() {
     retry: 2,
   })
 
+  const { data: live } = useQuery({
+    queryKey: ['admin-live-stats'],
+    queryFn: getLiveStats,
+    refetchInterval: 5000,
+  })
+
   return (
     <div className="space-y-6">
       <div>
@@ -81,6 +88,27 @@ export function AdminDashboardPage() {
             </motion.div>
           </>
         )}
+      </div>
+
+      {/* Live counters */}
+      <div className="grid grid-cols-3 gap-4">
+        {[
+          { label: 'Besucher online', value: live?.visitorsOnline ?? '–', icon: <Globe size={18} />, color: 'text-emerald-400', hint: 'letzte 5 Min.' },
+          { label: 'Aktive Uploads', value: live?.activeUploads ?? '–', icon: <Upload size={18} />, color: 'text-amber-400', hint: 'laufend' },
+          { label: 'Aktive Downloads', value: live?.activeDownloads ?? '–', icon: <ArrowDownToLine size={18} />, color: 'text-sky-400', hint: 'laufend' },
+        ].map((s, i) => (
+          <motion.div key={i} initial={{ opacity: 0, y: 10 }} animate={{ opacity: 1, y: 0 }} transition={{ delay: i * 0.05 }}>
+            <Card className="p-5 flex items-center gap-4">
+              <div className={`p-2.5 rounded-xl bg-white/5 ${s.color}`}>{s.icon}</div>
+              <div>
+                <p className="text-xs text-text-muted">{s.label}</p>
+                <p className="text-xl font-bold text-text-primary leading-tight">{s.value}</p>
+                <p className="text-[10px] text-text-muted leading-none mt-0.5">{s.hint}</p>
+              </div>
+              <span className="ml-auto w-2 h-2 rounded-full bg-emerald-400 animate-pulse" />
+            </Card>
+          </motion.div>
+        ))}
       </div>
 
       {data && (
@@ -137,6 +165,26 @@ export function AdminDashboardPage() {
                 </AreaChart>
               </ResponsiveContainer>
             )}
+          </div>
+
+          {/* Upload origins map */}
+          <div className="bg-bg-card border border-border rounded-2xl overflow-hidden">
+            <div className="flex items-center justify-between px-6 py-4 border-b border-border">
+              <div>
+                <h2 className="text-base font-semibold text-text-primary">Upload-Herkunft</h2>
+                <p className="text-xs text-text-muted mt-0.5">Letzte 30 Tage</p>
+              </div>
+              <Globe size={18} className="text-primary" />
+            </div>
+            <div style={{ height: 320 }}>
+              {live?.uploadLocations && live.uploadLocations.length > 0 ? (
+                <UploadMap locations={live.uploadLocations} />
+              ) : (
+                <div className="h-full flex items-center justify-center text-text-muted text-sm">
+                  Noch keine Upload-Standortdaten verfügbar
+                </div>
+              )}
+            </div>
           </div>
 
           {/* Recent transfers */}

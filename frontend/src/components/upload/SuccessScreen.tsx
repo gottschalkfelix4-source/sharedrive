@@ -1,6 +1,7 @@
 import { useState } from 'react'
-import { motion } from 'framer-motion'
-import { Copy, Check, ExternalLink, RotateCcw, ShieldCheck } from 'lucide-react'
+import { motion, AnimatePresence } from 'framer-motion'
+import { QRCodeSVG } from 'qrcode.react'
+import { Copy, Check, ExternalLink, RotateCcw, ShieldCheck, QrCode } from 'lucide-react'
 import { Button } from '@/components/ui/Button'
 import { Badge } from '@/components/ui/Badge'
 import { formatBytes, formatRelative, copyToClipboard } from '@/lib/utils'
@@ -11,11 +12,13 @@ interface SuccessScreenProps {
   fileCount: number
   totalSize: string
   encryptionKey?: string
+  virusScanned?: boolean
   onReset: () => void
 }
 
-export function SuccessScreen({ shortId, expiresAt, fileCount, totalSize, encryptionKey, onReset }: SuccessScreenProps) {
+export function SuccessScreen({ shortId, expiresAt, fileCount, totalSize, encryptionKey, virusScanned, onReset }: SuccessScreenProps) {
   const [copied, setCopied] = useState(false)
+  const [showQr, setShowQr] = useState(false)
   // If E2E encrypted, embed the key in the URL fragment (never sent to server)
   const url = encryptionKey
     ? `${window.location.origin}/d/${shortId}#key=${encryptionKey}`
@@ -55,12 +58,20 @@ export function SuccessScreen({ shortId, expiresAt, fileCount, totalSize, encryp
         <p className="text-text-muted mt-1">
           {fileCount} Datei{fileCount > 1 ? 'en' : ''} · {formatBytes(totalSize)} · läuft ab {formatRelative(expiresAt)}
         </p>
-        {encryptionKey && (
-          <div className="flex justify-center mt-2">
-            <Badge variant="info" className="gap-1.5">
-              <ShieldCheck size={11} />
-              Ende-zu-Ende verschlüsselt
-            </Badge>
+        {(encryptionKey || virusScanned) && (
+          <div className="flex justify-center gap-2 mt-2 flex-wrap">
+            {encryptionKey && (
+              <Badge variant="info" className="gap-1.5">
+                <ShieldCheck size={11} />
+                Ende-zu-Ende verschlüsselt
+              </Badge>
+            )}
+            {virusScanned && (
+              <Badge variant="success" className="gap-1.5">
+                <ShieldCheck size={11} />
+                Virenfrei (ClamAV-geprüft)
+              </Badge>
+            )}
           </div>
         )}
       </div>
@@ -70,6 +81,12 @@ export function SuccessScreen({ shortId, expiresAt, fileCount, totalSize, encryp
         <span className="flex-1 text-sm text-text-secondary truncate text-left">{url}</span>
         <Button
           size="sm"
+          variant="secondary"
+          icon={<QrCode size={14} />}
+          onClick={() => setShowQr((v) => !v)}
+        />
+        <Button
+          size="sm"
           variant={copied ? 'secondary' : 'primary'}
           icon={copied ? <Check size={14} /> : <Copy size={14} />}
           onClick={handleCopy}
@@ -77,6 +94,21 @@ export function SuccessScreen({ shortId, expiresAt, fileCount, totalSize, encryp
           {copied ? 'Kopiert!' : 'Kopieren'}
         </Button>
       </div>
+
+      <AnimatePresence>
+        {showQr && (
+          <motion.div
+            initial={{ opacity: 0, height: 0 }}
+            animate={{ opacity: 1, height: 'auto' }}
+            exit={{ opacity: 0, height: 0 }}
+            className="overflow-hidden"
+          >
+            <div className="flex justify-center p-4 bg-white rounded-xl">
+              <QRCodeSVG value={url} size={160} />
+            </div>
+          </motion.div>
+        )}
+      </AnimatePresence>
 
       {/* Actions */}
       <div className="flex items-center gap-3">

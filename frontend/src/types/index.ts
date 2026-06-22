@@ -5,11 +5,13 @@ export interface User {
   role: 'USER' | 'ADMIN'
   storageUsed: string
   createdAt: string
+  totpEnabled?: boolean
 }
 
 export interface FileInfo {
   id: string
   name: string
+  relativePath?: string | null
   size: string
   mimeType: string
 }
@@ -22,11 +24,21 @@ export interface Transfer {
   createdAt: string
   downloadCount: number
   maxDownloads?: number | null
+  notifyEmail?: string | null
   totalSize: string
   passwordProtected: boolean
   encrypted: boolean
+  virusScanned: boolean
   files: FileInfo[]
   expired?: boolean
+}
+
+export interface DownloadLogEntry {
+  id: string
+  createdAt: string
+  country?: string | null
+  browser?: string | null
+  os?: string | null
 }
 
 export interface TransferUploadResult {
@@ -34,6 +46,7 @@ export interface TransferUploadResult {
   expiresAt: string
   fileCount: number
   totalSize: string
+  virusScanned: boolean
   encryptionKey?: string  // base64url AES-256-GCM key, present when encrypted=true
 }
 
@@ -81,6 +94,7 @@ export interface PublicSettings {
   registrationEnabled: boolean
   maxFileSizeBytes: number
   maxTransferSizeBytes: number
+  userStorageQuotaBytes: number
 }
 
 export interface AllSettings {

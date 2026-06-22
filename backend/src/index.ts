@@ -8,6 +8,7 @@ import { transfersRouter } from './routes/transfers'
 import { downloadRouter } from './routes/download'
 import { adminRouter } from './routes/admin'
 import { settingsRouter } from './routes/settings'
+import { scanRouter } from './routes/scan'
 import { setupRouter } from './routes/setup'
 import { assetsRouter } from './routes/assets'
 import { diagRouter, DIAG_TOKEN } from './routes/diag'
@@ -77,6 +78,7 @@ app.use('/api/transfers', transfersRouter)
 app.use('/api/d', downloadRouter)
 app.use('/api/admin', adminRouter)
 app.use('/api/settings', settingsRouter)
+app.use('/api/scan', scanRouter)
 app.use('/api/assets', assetsRouter)
 app.use('/api/diag', diagRouter)
 

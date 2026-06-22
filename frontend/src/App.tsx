@@ -9,8 +9,11 @@ import { ImprintPage } from '@/pages/ImprintPage'
 import { LoginPage } from '@/pages/auth/LoginPage'
 import { RegisterPage } from '@/pages/auth/RegisterPage'
 import { VerifyEmailPage } from '@/pages/auth/VerifyEmailPage'
+import { ForgotPasswordPage } from '@/pages/auth/ForgotPasswordPage'
+import { ResetPasswordPage } from '@/pages/auth/ResetPasswordPage'
 import { SetupPage } from '@/pages/SetupPage'
 import { DashboardPage } from '@/pages/dashboard/DashboardPage'
+import { AccountSettingsPage } from '@/pages/account/AccountSettingsPage'
 import { AdminLayout } from '@/pages/admin/AdminLayout'
 import { AdminDashboardPage } from '@/pages/admin/AdminDashboardPage'
 import { AdminFilesPage } from '@/pages/admin/AdminFilesPage'
@@ -133,9 +136,15 @@ export default function App() {
         <Route path="/login" element={<WithNavbar><LoginPage /></WithNavbar>} />
         <Route path="/register" element={<WithNavbar><RegisterPage /></WithNavbar>} />
         <Route path="/verify-email" element={<WithNavbar><VerifyEmailPage /></WithNavbar>} />
+        <Route path="/forgot-password" element={<WithNavbar><ForgotPasswordPage /></WithNavbar>} />
+        <Route path="/reset-password" element={<WithNavbar><ResetPasswordPage /></WithNavbar>} />
         <Route
           path="/dashboard"
           element={<WithNavbar><RequireAuth><DashboardPage /></RequireAuth></WithNavbar>}
+        />
+        <Route
+          path="/account"
+          element={<WithNavbar><RequireAuth><AccountSettingsPage /></RequireAuth></WithNavbar>}
         />
         <Route path="*" element={<WithNavbar><NotFoundPage /></WithNavbar>} />
       </Routes>

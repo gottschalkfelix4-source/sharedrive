@@ -1,19 +1,29 @@
 import { useState } from 'react'
 import { motion, AnimatePresence } from 'framer-motion'
-import { Shield, Zap, Globe, ArrowRight, ShieldCheck } from 'lucide-react'
+import { Shield, Zap, Globe, ArrowRight, ShieldCheck, HardDrive, AlertCircle } from 'lucide-react'
+import { useQuery } from '@tanstack/react-query'
 import { UploadZone } from '@/components/upload/UploadZone'
 import { UploadOptions } from '@/components/upload/UploadOptions'
 import { UploadProgress } from '@/components/upload/UploadProgress'
+import { VirusScanProgress, VirusScanResult } from '@/components/upload/VirusScanProgress'
 import { SuccessScreen } from '@/components/upload/SuccessScreen'
 import { Button } from '@/components/ui/Button'
 import { Card } from '@/components/ui/Card'
 import { MatrixRain } from '@/components/effects/MatrixRain'
 import { LockAnimation } from '@/components/effects/LockAnimation'
 import { Toggle } from '@/components/ui/Toggle'
-import { uploadTransfer, type UploadOptions as UOpts } from '@/api/transfers'
+import { uploadTransfer, VirusFoundError, ScanError, type UploadOptions as UOpts } from '@/api/transfers'
+import { getDiskStats } from '@/api/settings'
 import toast from 'react-hot-toast'
 
-type Phase = 'idle' | 'uploading' | 'success'
+type Phase = 'idle' | 'uploading' | 'scanning' | 'blocked' | 'success'
+
+interface ScanErrorState {
+  type: 'infected' | 'error'
+  virus?: string
+  infectedFile?: string
+  message?: string
+}
 
 const defaultOptions = {
   title: '',
@@ -21,6 +31,7 @@ const defaultOptions = {
   password: '',
   expiresInDays: 7,
   notifyEmail: '',
+  maxDownloads: '',
   encrypted: false,
 }
 
@@ -30,11 +41,35 @@ const features = [
   { icon: <Globe size={20} />, title: 'Überall teilen', desc: 'Einfacher Link, kein Konto nötig' },
 ]
 
+function formatTimeUntil(iso: string): string {
+  const diff = new Date(iso).getTime() - Date.now()
+  if (diff <= 0) return 'gleich'
+  const totalMinutes = Math.floor(diff / 60_000)
+  const days = Math.floor(totalMinutes / 1440)
+  const hours = Math.floor((totalMinutes % 1440) / 60)
+  const minutes = totalMinutes % 60
+  if (days > 0 && hours > 0) return `in ${days} Tag${days > 1 ? 'en' : ''} und ${hours} Stunde${hours > 1 ? 'n' : ''}`
+  if (days > 0) return `in ${days} Tag${days > 1 ? 'en' : ''}`
+  if (hours > 0 && minutes > 0) return `in ${hours} Stunde${hours > 1 ? 'n' : ''} und ${minutes} Minute${minutes > 1 ? 'n' : ''}`
+  if (hours > 0) return `in ${hours} Stunde${hours > 1 ? 'n' : ''}`
+  return `in ${minutes} Minute${minutes !== 1 ? 'n' : ''}`
+}
+
 export function HomePage() {
+  const { data: diskStats } = useQuery({
+    queryKey: ['disk-stats'],
+    queryFn: getDiskStats,
+    staleTime: 30_000,
+  })
+
+  const diskFull = (diskStats?.pct ?? 0) >= 95
+
   const [files, setFiles] = useState<File[]>([])
   const [options, setOptions] = useState(defaultOptions)
   const [phase, setPhase] = useState<Phase>('idle')
   const [progress, setProgress] = useState({ percent: 0, speed: '0 KB/s', eta: '…' })
+  const [scanProgress, setScanProgress] = useState({ percent: 0, currentFile: null as string | null, phase: 'streaming' as 'streaming' | 'analyzing' })
+  const [scanError, setScanError] = useState<ScanErrorState | null>(null)
   const [result, setResult] = useState<any>(null)
   const [showLockAnim, setShowLockAnim] = useState(false)
 
@@ -60,13 +95,26 @@ export function HomePage() {
     try {
       const res = await uploadTransfer(files, {
         ...options,
+        maxDownloads: options.maxDownloads ? parseInt(options.maxDownloads) : undefined,
         onProgress: (percent, speed, eta) => setProgress({ percent, speed, eta }),
+        onScanProgress: (percent, currentFile, scanPhase) => {
+          setPhase('scanning')
+          setScanProgress({ percent, currentFile, phase: scanPhase })
+        },
       })
       setResult(res)
       setPhase('success')
     } catch (err: any) {
-      toast.error(err?.response?.data?.error || 'Upload fehlgeschlagen')
-      setPhase('idle')
+      if (err instanceof VirusFoundError) {
+        setScanError({ type: 'infected', virus: err.virus, infectedFile: err.infectedFile })
+        setPhase('blocked')
+      } else if (err instanceof ScanError) {
+        setScanError({ type: 'error', message: err.message })
+        setPhase('blocked')
+      } else {
+        toast.error(err?.response?.data?.error || 'Upload fehlgeschlagen')
+        setPhase('idle')
+      }
     }
   }
 
@@ -75,6 +123,8 @@ export function HomePage() {
     setOptions(defaultOptions)
     setPhase('idle')
     setResult(null)
+    setScanProgress({ percent: 0, currentFile: null, phase: 'streaming' })
+    setScanError(null)
   }
 
   const totalSize = files.reduce((sum, f) => sum + f.size, 0)
@@ -124,6 +174,24 @@ export function HomePage() {
                 exit={{ opacity: 0 }}
                 className="space-y-4"
               >
+                {diskFull && (
+                  <motion.div
+                    initial={{ opacity: 0, y: -8 }}
+                    animate={{ opacity: 1, y: 0 }}
+                    className="flex gap-3 rounded-xl border border-red-500/30 bg-red-500/10 px-4 py-3 text-sm text-red-300"
+                  >
+                    <AlertCircle size={16} className="flex-shrink-0 mt-0.5" />
+                    <div>
+                      <p className="font-medium">Kein Speicherplatz verfügbar</p>
+                      <p className="text-red-400/80 mt-0.5 text-xs">
+                        {diskStats?.nextExpiryAt
+                          ? `Uploads sind derzeit nicht möglich. Nächste Dateien werden ${formatTimeUntil(diskStats.nextExpiryAt)} automatisch gelöscht und geben Speicher frei.`
+                          : 'Uploads sind derzeit nicht möglich. Bitte wende dich an den Administrator.'}
+                      </p>
+                    </div>
+                  </motion.div>
+                )}
+
                 <UploadZone
                   files={files}
                   onFilesAdded={handleFilesAdded}
@@ -157,6 +225,7 @@ export function HomePage() {
                       className="w-full"
                       size="lg"
                       icon={<ArrowRight size={18} />}
+                      disabled={diskFull}
                       onClick={handleUpload}
                     >
                       Hochladen & Link erhalten
@@ -177,6 +246,29 @@ export function HomePage() {
               </motion.div>
             )}
 
+            {phase === 'scanning' && (
+              <motion.div key="scanning" initial={{ opacity: 0 }} animate={{ opacity: 1 }} exit={{ opacity: 0 }}>
+                <VirusScanProgress
+                  percent={scanProgress.percent}
+                  currentFile={scanProgress.currentFile}
+                  fileCount={files.length}
+                  phase={scanProgress.phase}
+                />
+              </motion.div>
+            )}
+
+            {phase === 'blocked' && scanError && (
+              <motion.div key="blocked" initial={{ opacity: 0 }} animate={{ opacity: 1 }} exit={{ opacity: 0 }}>
+                <VirusScanResult
+                  type={scanError.type}
+                  virus={scanError.virus}
+                  infectedFile={scanError.infectedFile}
+                  message={scanError.message}
+                  onReset={handleReset}
+                />
+              </motion.div>
+            )}
+
             {phase === 'success' && result && (
               <motion.div key="success" initial={{ opacity: 0 }} animate={{ opacity: 1 }} exit={{ opacity: 0 }}>
                 <SuccessScreen
@@ -185,6 +277,7 @@ export function HomePage() {
                   fileCount={result.fileCount}
                   totalSize={result.totalSize}
                   encryptionKey={result.encryptionKey}
+                  virusScanned={result.virusScanned}
                   onReset={handleReset}
                 />
               </motion.div>
@@ -209,6 +302,27 @@ export function HomePage() {
             </Card>
           ))}
         </motion.div>
+
+        {/* Server disk usage */}
+        {diskStats && (
+          <motion.div
+            initial={{ opacity: 0 }}
+            animate={{ opacity: 1 }}
+            transition={{ delay: 0.3 }}
+            className="mt-4 flex items-center gap-3 px-1"
+          >
+            <HardDrive size={13} className="text-text-muted flex-shrink-0" />
+            <div className="flex-1 h-1 bg-border rounded-full overflow-hidden">
+              <div
+                className={`h-full rounded-full transition-[width] duration-500 ${
+                  diskStats.pct >= 90 ? 'bg-red-500' : diskStats.pct >= 70 ? 'bg-amber-500' : 'bg-primary'
+                }`}
+                style={{ width: `${diskStats.pct}%` }}
+              />
+            </div>
+            <span className="text-xs text-text-muted tabular-nums">{diskStats.pct}%</span>
+          </motion.div>
+        )}
       </div>
     </div>
   )

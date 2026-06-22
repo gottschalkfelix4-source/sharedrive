@@ -12,6 +12,41 @@ import { Spinner } from '@/components/ui/Spinner'
 import { formatBytes, formatDate, formatRelative, getFileIcon } from '@/lib/utils'
 import toast from 'react-hot-toast'
 
+type DlProgress = { phase: 'download' | 'decrypt'; pct: number; speed: number }
+
+async function readWithProgress(
+  response: Response,
+  plaintextSize: number,
+  onProgress: (pct: number, speed: number) => void,
+): Promise<ArrayBuffer> {
+  const contentLen = parseInt(response.headers.get('content-length') || String(plaintextSize))
+  const reader = response.body!.getReader()
+  const chunks: Uint8Array[] = []
+  let received = 0
+  let lastT = Date.now()
+  let lastB = 0
+
+  while (true) {
+    const { done, value } = await reader.read()
+    if (done) break
+    chunks.push(value)
+    received += value.length
+    const now = Date.now()
+    const elapsed = (now - lastT) / 1000
+    if (elapsed >= 0.25) {
+      onProgress(Math.min(99, Math.round((received / contentLen) * 100)), (received - lastB) / elapsed)
+      lastT = now
+      lastB = received
+    }
+  }
+  onProgress(100, 0)
+
+  const buf = new Uint8Array(received)
+  let off = 0
+  for (const c of chunks) { buf.set(c, off); off += c.length }
+  return buf.buffer as ArrayBuffer
+}
+
 // Parse #key=<base64url> from the URL fragment (never sent to the server)
 function useEncryptionKey(): string | null {
   return useMemo(() => {
@@ -28,6 +63,8 @@ export function DownloadPage() {
   const [enteredPassword, setEnteredPassword] = useState<string | undefined>()
   const [passwordError, setPasswordError] = useState('')
   const [decrypting, setDecrypting] = useState<string | null>(null)  // fileId being decrypted
+  const [dlProgress, setDlProgress] = useState<DlProgress | null>(null)
+  const [dlQueue, setDlQueue] = useState<{ current: number; total: number } | null>(null)
 
   const encKeyRaw = useEncryptionKey()
 
@@ -38,9 +75,10 @@ export function DownloadPage() {
     retry: false,
   })
 
-  // For E2E transfers, title/message/filenames are stored encrypted — decrypt them
-  // client-side once the key (from the URL fragment) and the transfer data are available.
-  const [decryptedMeta, setDecryptedMeta] = useState<{ title?: string; message?: string; names: Record<string, string> }>({ names: {} })
+  // For E2E transfers, title/message/filenames/folder paths are stored encrypted —
+  // decrypt them client-side once the key (from the URL fragment) and the transfer
+  // data are available.
+  const [decryptedMeta, setDecryptedMeta] = useState<{ title?: string; message?: string; names: Record<string, string>; paths: Record<string, string> }>({ names: {}, paths: {} })
 
   useEffect(() => {
     if (!data?.encrypted || !encKeyRaw) return
@@ -50,15 +88,21 @@ export function DownloadPage() {
       const title = data.title ? await decryptText(key, data.title).catch(() => undefined) : undefined
       const message = data.message ? await decryptText(key, data.message).catch(() => undefined) : undefined
       const names: Record<string, string> = {}
+      const paths: Record<string, string> = {}
       for (const f of data.files) {
         names[f.id] = await decryptText(key, f.name).catch(() => f.name)
+        if (f.relativePath) {
+          paths[f.id] = await decryptText(key, f.relativePath).catch(() => f.relativePath)
+        }
       }
-      if (!cancelled) setDecryptedMeta({ title, message, names })
+      if (!cancelled) setDecryptedMeta({ title, message, names, paths })
     })()
     return () => { cancelled = true }
   }, [data, encKeyRaw])
 
   const getFileName = (fileId: string, fallback: string) => decryptedMeta.names[fileId] ?? fallback
+  const getDisplayPath = (file: any, isEncrypted: boolean) =>
+    isEncrypted ? (decryptedMeta.paths[file.id] ?? decryptedMeta.names[file.id] ?? 'Verschlüsselte Datei') : (file.relativePath || file.name)
 
   const handlePasswordSubmit = (e: React.FormEvent) => {
     e.preventDefault()
@@ -73,24 +117,33 @@ export function DownloadPage() {
     // Encrypted transfer with key available — decrypt in browser
     if (transfer?.encrypted && encKeyRaw) {
       setDecrypting(fileId)
+      setDlProgress({ phase: 'download', pct: 0, speed: 0 })
       try {
         const key = await importKey(encKeyRaw)
         const fetchHeaders: Record<string, string> = { 'Accept': 'application/octet-stream' }
         if (enteredPassword) fetchHeaders['x-transfer-password'] = enteredPassword
 
         if (hasFilePicker) {
-          // Streaming decrypt via File System Access API — works for any file size
+          // Streaming decrypt via File System Access API — download + decrypt interleaved
           const fileHandle = await (window as any).showSaveFilePicker({ suggestedName: fileName })
           const writable = await fileHandle.createWritable()
           const response = await fetch(url, { headers: fetchHeaders })
           if (!response.ok) throw new Error('Download fehlgeschlagen')
-          await decryptStream(response.body!, key, parseInt(fileSize), writable)
+          setDlProgress({ phase: 'decrypt', pct: 0, speed: 0 })
+          await decryptStream(response.body!, key, parseInt(fileSize), writable, (pct) => {
+            setDlProgress({ phase: 'decrypt', pct, speed: 0 })
+          })
         } else {
-          // In-memory decrypt — suitable for files up to a few hundred MB
+          // In-memory decrypt — phase 1: download, phase 2: decrypt
           const response = await fetch(url, { headers: fetchHeaders })
           if (!response.ok) throw new Error('Download fehlgeschlagen')
-          const encData = await response.arrayBuffer()
-          const blob = await decryptToBlob(key, encData, parseInt(fileSize))
+          const encData = await readWithProgress(response, parseInt(fileSize), (pct, speed) => {
+            setDlProgress({ phase: 'download', pct, speed })
+          })
+          setDlProgress({ phase: 'decrypt', pct: 0, speed: 0 })
+          const blob = await decryptToBlob(key, encData, parseInt(fileSize), (pct) => {
+            setDlProgress({ phase: 'decrypt', pct, speed: 0 })
+          })
           const a = document.createElement('a')
           a.href = URL.createObjectURL(blob)
           a.download = fileName
@@ -102,6 +155,7 @@ export function DownloadPage() {
         toast.error(err?.message || 'Entschlüsselung fehlgeschlagen')
       } finally {
         setDecrypting(null)
+        setDlProgress(null)
       }
       return
     }
@@ -112,6 +166,16 @@ export function DownloadPage() {
 
   const handleDownloadAll = () => {
     window.open(getZipUrl(shortId!), '_blank')
+  }
+
+  const handleDownloadAllEncrypted = async () => {
+    const files = data?.files ?? []
+    for (let i = 0; i < files.length; i++) {
+      setDlQueue({ current: i + 1, total: files.length })
+      const fileName = getFileName(files[i].id, 'Verschlüsselte Datei')
+      await handleDownloadFile(files[i].id, fileName, files[i].size)
+    }
+    setDlQueue(null)
   }
 
   if (isLoading) {
@@ -220,6 +284,12 @@ export function DownloadPage() {
                   E2E verschlüsselt
                 </Badge>
               )}
+              {transfer.virusScanned && (
+                <Badge variant="success" className="gap-1">
+                  <ShieldCheck size={11} />
+                  Virenfrei
+                </Badge>
+              )}
             </div>
           </div>
 
@@ -259,6 +329,7 @@ export function DownloadPage() {
             <div className="divide-y divide-border">
               {transfer.files.map((file: any, i: number) => {
                 const fileName = getFileName(file.id, isEncrypted ? 'Verschlüsselte Datei' : file.name)
+                const displayPath = getDisplayPath(file, isEncrypted)
                 return (
                 <motion.div
                   key={file.id}
@@ -269,20 +340,41 @@ export function DownloadPage() {
                 >
                   <span className="text-2xl">{getFileIcon(file.mimeType)}</span>
                   <div className="flex-1 min-w-0">
-                    <p className="text-sm font-medium text-text-primary truncate">{fileName}</p>
+                    <p className="text-sm font-medium text-text-primary truncate">{displayPath}</p>
                     <p className="text-xs text-text-muted">{formatBytes(file.size)}</p>
                   </div>
                   {!isExpired && !keyMissing && (
-                    <Button
-                      variant="secondary"
-                      size="sm"
-                      icon={decrypting === file.id ? undefined : <Download size={13} />}
-                      loading={decrypting === file.id}
-                      disabled={decrypting !== null}
-                      onClick={() => handleDownloadFile(file.id, fileName, file.size)}
-                    >
-                      {decrypting === file.id ? 'Entschlüsseln…' : 'Herunterladen'}
-                    </Button>
+                    decrypting === file.id ? (
+                      <div className="flex flex-col items-end gap-1 w-36">
+                        <div className="flex items-center justify-between w-full text-xs">
+                          <span className="text-text-muted">
+                            {dlProgress?.phase === 'download' ? 'Herunterladen' : 'Entschlüsseln'}…
+                          </span>
+                          <span className="font-semibold text-text-primary">{dlProgress?.pct ?? 0}%</span>
+                        </div>
+                        {dlProgress?.phase === 'download' && dlProgress.speed > 0 && (
+                          <p className="text-[10px] text-text-muted self-end leading-none">
+                            {formatBytes(Math.round(dlProgress.speed))}/s
+                          </p>
+                        )}
+                        <div className="w-full h-1 bg-border rounded-full overflow-hidden">
+                          <div
+                            className="h-full bg-primary rounded-full transition-[width] duration-150 ease-out"
+                            style={{ width: `${dlProgress?.pct ?? 0}%` }}
+                          />
+                        </div>
+                      </div>
+                    ) : (
+                      <Button
+                        variant="secondary"
+                        size="sm"
+                        icon={<Download size={13} />}
+                        disabled={decrypting !== null}
+                        onClick={() => handleDownloadFile(file.id, fileName, file.size)}
+                      >
+                        Herunterladen
+                      </Button>
+                    )
                   )}
                 </motion.div>
                 )
@@ -291,25 +383,49 @@ export function DownloadPage() {
           </div>
 
           {!isExpired && !keyMissing && (
-            <Button
-              className="w-full"
-              size="lg"
-              icon={<Download size={18} />}
-              disabled={decrypting !== null}
-              onClick={
-                transfer.files.length === 1 || isEncrypted
-                  ? () => handleDownloadFile(
-                      transfer.files[0].id,
-                      getFileName(transfer.files[0].id, isEncrypted ? 'Verschlüsselte Datei' : transfer.files[0].name),
-                      transfer.files[0].size,
-                    )
-                  : handleDownloadAll
-              }
-            >
-              {transfer.files.length === 1 || isEncrypted
-                ? (isEncrypted ? 'Entschlüsseln & herunterladen' : 'Datei herunterladen')
-                : 'Alle als ZIP herunterladen'}
-            </Button>
+            <div className="space-y-2">
+              <Button
+                className="w-full"
+                size="lg"
+                icon={decrypting ? undefined : <Download size={18} />}
+                disabled={decrypting !== null}
+                onClick={
+                  transfer.files.length === 1
+                    ? () => handleDownloadFile(
+                        transfer.files[0].id,
+                        getFileName(transfer.files[0].id, isEncrypted ? 'Verschlüsselte Datei' : transfer.files[0].name),
+                        transfer.files[0].size,
+                      )
+                    : isEncrypted
+                    ? handleDownloadAllEncrypted
+                    : handleDownloadAll
+                }
+              >
+                {decrypting
+                  ? `${dlQueue ? `${dlQueue.current}/${dlQueue.total} – ` : ''}${dlProgress?.phase === 'download' ? 'Herunterladen' : 'Entschlüsseln'}… ${dlProgress?.pct ?? 0}%`
+                  : transfer.files.length === 1
+                  ? (isEncrypted ? 'Entschlüsseln & herunterladen' : 'Datei herunterladen')
+                  : isEncrypted
+                  ? 'Alle entschlüsseln & herunterladen'
+                  : 'Alle als ZIP herunterladen'}
+              </Button>
+
+              {decrypting && (
+                <div className="space-y-1">
+                  <div className="h-1.5 bg-border rounded-full overflow-hidden">
+                    <div
+                      className="h-full bg-primary rounded-full transition-[width] duration-150 ease-out"
+                      style={{ width: `${dlProgress?.pct ?? 0}%` }}
+                    />
+                  </div>
+                  {dlProgress?.phase === 'download' && dlProgress.speed > 0 && (
+                    <p className="text-center text-xs text-text-muted">
+                      {formatBytes(Math.round(dlProgress.speed))}/s
+                    </p>
+                  )}
+                </div>
+              )}
+            </div>
           )}
 
           {canDecrypt && !hasFilePicker && (

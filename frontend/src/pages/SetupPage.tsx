@@ -188,7 +188,7 @@ export function SetupPage() {
       const cleanUrl = baseUrl.replace(/\/$/, '')
       await runSetup({ email: form.email, username: form.username, password: form.password, baseUrl: cleanUrl })
       const { token, user } = await login(form.email, form.password)
-      setAuth(user, token)
+      if (token && user) setAuth(user, token)
       setStep(4)
     } catch (err: any) {
       toast.error(err?.response?.data?.error || 'Einrichtung fehlgeschlagen')

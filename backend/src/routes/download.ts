@@ -8,6 +8,7 @@ import { getObjectStream } from '../lib/minio'
 import { AppError } from '../middleware/errorHandler'
 import { sendDownloadNotification } from '../services/email'
 import { log } from '../services/logger'
+import { incrementDownloads, decrementDownloads } from '../lib/liveCounters'
 
 // Each AES-GCM encrypted chunk adds 12 bytes IV + 16 bytes auth tag overhead
 const ENC_OVERHEAD = 28
@@ -59,9 +60,11 @@ router.get('/:shortId', async (req, res, next) => {
       totalSize: transfer.totalSize.toString(),
       passwordProtected: !!transfer.passwordHash,
       encrypted: transfer.encrypted,
+      virusScanned: transfer.virusScanned,
       files: transfer.files.map((f) => ({
         id: f.id,
         name: f.name,
+        relativePath: f.relativePath,
         size: f.size.toString(),
         mimeType: f.mimeType,
       })),
@@ -90,7 +93,7 @@ router.get('/:shortId/zip', async (req, res, next) => {
 
     for (const file of transfer.files) {
       const stream = await getObjectStream(file.storageKey)
-      archive.append(stream as Readable, { name: file.name })
+      archive.append(stream as Readable, { name: file.relativePath || file.name })
     }
 
     await archive.finalize()
@@ -140,6 +143,13 @@ router.get('/:shortId/files/:fileId', async (req, res, next) => {
     res.setHeader('Content-Type', file.mimeType || 'application/octet-stream')
     res.setHeader('Content-Disposition', `attachment; filename="${encodeURIComponent(dispositionName)}"`)
     res.setHeader('Content-Length', String(contentLength))
+
+    incrementDownloads()
+    let counted = false
+    const done = () => { if (!counted) { counted = true; decrementDownloads() } }
+    res.on('finish', done)
+    res.on('close', done)
+
     stream.pipe(res)
 
     await prisma.transfer.update({

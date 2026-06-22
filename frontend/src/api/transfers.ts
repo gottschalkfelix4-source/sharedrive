@@ -1,5 +1,5 @@
 import { api } from './client'
-import type { Transfer, TransferUploadResult } from '../types'
+import type { Transfer, TransferUploadResult, DownloadLogEntry } from '../types'
 import { generateKey, exportKey, encryptChunk, encryptText, CHUNK_SIZE } from '@/lib/e2e'
 
 export interface UploadOptions {
@@ -8,8 +8,76 @@ export interface UploadOptions {
   password?: string
   expiresInDays?: number
   notifyEmail?: string
+  maxDownloads?: number
   encrypted?: boolean
   onProgress?: (percent: number, speed: string, eta: string) => void
+  onScanProgress?: (percent: number, currentFile: string | null, phase: 'streaming' | 'analyzing') => void
+}
+
+export class VirusFoundError extends Error {
+  virus: string
+  infectedFile?: string
+  constructor(virus: string, infectedFile?: string) {
+    super(virus)
+    this.name = 'VirusFoundError'
+    this.virus = virus
+    this.infectedFile = infectedFile
+  }
+}
+
+export class ScanError extends Error {
+  constructor(message: string) {
+    super(message)
+    this.name = 'ScanError'
+  }
+}
+
+interface ScanStatusResponse {
+  status: 'scanning' | 'clean' | 'infected' | 'error'
+  scannedBytes: number
+  totalBytes: number
+  currentFile: string | null
+  phase?: 'streaming' | 'analyzing'
+  virus?: string
+  infectedFile?: string
+  message?: string
+  result?: TransferUploadResult
+}
+
+const settle = (ms: number) => new Promise<void>((r) => setTimeout(r, ms))
+
+// Polls the scan-status endpoint until the server reports a final outcome.
+async function pollScan(
+  scanId: string,
+  onProgress?: (percent: number, currentFile: string | null, phase: 'streaming' | 'analyzing') => void,
+): Promise<TransferUploadResult> {
+  for (;;) {
+    const res = await api.get<ScanStatusResponse>(`/scan/${scanId}`)
+    const data = res.data
+
+    if (data.status === 'scanning') {
+      const pct = data.totalBytes > 0
+        ? Math.min(99, Math.round((data.scannedBytes / data.totalBytes) * 100))
+        : 0
+      onProgress?.(pct, data.currentFile, data.phase || 'streaming')
+      await new Promise((r) => setTimeout(r, 400))
+      continue
+    }
+
+    if (data.status === 'clean' && data.result) {
+      onProgress?.(100, null, 'streaming')
+      // Give the smoothed progress ring time to visually reach 100% before the
+      // caller swaps phases away — otherwise the result screen appears mid-animation.
+      await settle(650)
+      return data.result
+    }
+
+    if (data.status === 'infected') {
+      throw new VirusFoundError(data.virus || 'Unbekannte Bedrohung', data.infectedFile)
+    }
+
+    throw new ScanError(data.message || 'Virenscan fehlgeschlagen')
+  }
 }
 
 // ─── Chunked upload ───────────────────────────────────────────────────────────
@@ -56,7 +124,7 @@ export async function uploadTransfer(
     const elapsed = (Date.now() - startTime) / 1000 || 0.001
     const speed   = uploadedBytes / elapsed
     const remSec  = speed > 0 ? Math.round((totalBytes - uploadedBytes) / speed) : 0
-    options.onProgress(pct, formatBytes(speed) + '/s', remSec + 's')
+    options.onProgress(pct, formatBytes(speed) + '/s', formatEta(remSec))
   }
 
   // Generate encryption key if E2E is requested
@@ -67,18 +135,23 @@ export async function uploadTransfer(
     encKeyExported = await exportKey(encKey)
   }
 
-  // When E2E is on, metadata (title/message/filenames) is encrypted too, so the
-  // server/DB never sees anything readable — only file size, count and dates remain.
+  // When E2E is on, metadata (title/message/filenames/folder paths) is encrypted
+  // too, so the server/DB never sees anything readable — only file size, count
+  // and dates remain.
   const title = options.title || undefined
   const message = options.message || undefined
   const metaTitle = encKey && title ? await encryptText(encKey, title) : title
   const metaMessage = encKey && message ? await encryptText(encKey, message) : message
   const metaFiles = await Promise.all(
-    files.map(async (f) => ({
-      name:     encKey ? await encryptText(encKey, f.name) : f.name,
-      size:     f.size,
-      mimeType: f.type || 'application/octet-stream',
-    }))
+    files.map(async (f) => {
+      const relativePath = (f as any).webkitRelativePath || undefined
+      return {
+        name:         encKey ? await encryptText(encKey, f.name) : f.name,
+        relativePath: encKey && relativePath ? await encryptText(encKey, relativePath) : relativePath,
+        size:         f.size,
+        mimeType:     f.type || 'application/octet-stream',
+      }
+    })
   )
 
   // ── 1. Init ──────────────────────────────────────────────────────────────────
@@ -88,6 +161,7 @@ export async function uploadTransfer(
     password:      options.password     || undefined,
     expiresInDays: options.expiresInDays,
     notifyEmail:   options.notifyEmail  || undefined,
+    maxDownloads:  options.maxDownloads || undefined,
     encrypted:     !!options.encrypted,
     files: metaFiles,
   })
@@ -135,6 +209,14 @@ export async function uploadTransfer(
   // ── 3. Finalize ───────────────────────────────────────────────────────────────
   const finalRes = await api.post(`/transfers/chunked/${shortId}/finalize`)
   options.onProgress?.(100, '—', '0s')
+  // Let the smoothed upload ring visually reach 100% before switching phase.
+  await settle(400)
+
+  if (finalRes.status === 202) {
+    const { scanId } = finalRes.data as { scanId: string }
+    const result = await pollScan(scanId, options.onScanProgress)
+    return { ...result, encryptionKey: encKeyExported }
+  }
 
   return { ...finalRes.data, encryptionKey: encKeyExported }
 }
@@ -155,12 +237,34 @@ export async function deleteTransfer(shortId: string): Promise<void> {
   await api.delete(`/transfers/${shortId}`)
 }
 
+export async function updateTransfer(
+  shortId: string,
+  data: { expiresAt?: string; maxDownloads?: number | null },
+): Promise<Transfer> {
+  const res = await api.patch(`/transfers/${shortId}`, data)
+  return res.data
+}
+
+export async function resendTransferLink(shortId: string, email: string): Promise<void> {
+  await api.post(`/transfers/${shortId}/resend`, { email })
+}
+
+export async function getTransferDownloads(shortId: string): Promise<{ downloads: DownloadLogEntry[] }> {
+  const res = await api.get(`/transfers/${shortId}/downloads`)
+  return res.data
+}
+
 export function getDownloadUrl(shortId: string, fileId: string): string {
   return `/api/d/${shortId}/files/${fileId}`
 }
 
 export function getZipUrl(shortId: string): string {
   return `/api/d/${shortId}/zip`
+}
+
+function formatEta(seconds: number): string {
+  if (seconds < 60) return `${seconds}s`
+  return `${Math.round(seconds / 60)} min`
 }
 
 function formatBytes(bytes: number): string {

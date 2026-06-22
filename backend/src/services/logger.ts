@@ -1,7 +1,7 @@
 import { prisma } from '../lib/prisma'
 
 export type LogLevel = 'info' | 'warn' | 'error'
-export type LogCategory = 'upload' | 'auth' | 'download' | 'system' | 'error'
+export type LogCategory = 'upload' | 'auth' | 'download' | 'system' | 'error' | 'security'
 
 interface LogMeta {
   userId?: string

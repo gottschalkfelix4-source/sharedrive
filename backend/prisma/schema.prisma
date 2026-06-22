@@ -16,6 +16,12 @@ model User {
   emailVerified            Boolean   @default(false)
   emailVerificationToken   String?   @unique
   emailVerificationExpiry  DateTime?
+  passwordResetToken       String?   @unique
+  passwordResetExpiry      DateTime?
+  tokenVersion             Int       @default(0)
+  totpSecret               String?
+  totpEnabled              Boolean   @default(false)
+  totpBackupCodes          String[]  @default([])
   storageUsed              BigInt    @default(0)
   createdAt                DateTime  @default(now())
   updatedAt                DateTime  @updatedAt
@@ -23,6 +29,7 @@ model User {
 
   @@index([email])
   @@index([emailVerificationToken])
+  @@index([passwordResetToken])
 }
 
 enum Role {
@@ -44,6 +51,7 @@ model Transfer {
   notifyEmail   String?
   totalSize     BigInt        @default(0)
   encrypted     Boolean       @default(false)
+  virusScanned  Boolean       @default(false)
   createdAt     DateTime      @default(now())
   updatedAt     DateTime      @updatedAt
   files         File[]
@@ -55,14 +63,15 @@ model Transfer {
 }
 
 model File {
-  id         String   @id @default(cuid())
-  transferId String
-  transfer   Transfer @relation(fields: [transferId], references: [id], onDelete: Cascade)
-  name       String
-  size       BigInt
-  mimeType   String
-  storageKey String
-  createdAt  DateTime @default(now())
+  id           String   @id @default(cuid())
+  transferId   String
+  transfer     Transfer @relation(fields: [transferId], references: [id], onDelete: Cascade)
+  name         String
+  relativePath String?
+  size         BigInt
+  mimeType     String
+  storageKey   String
+  createdAt    DateTime @default(now())
 
   @@index([transferId])
 }

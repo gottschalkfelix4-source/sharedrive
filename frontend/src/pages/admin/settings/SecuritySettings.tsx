@@ -19,6 +19,7 @@ export function SecuritySettings() {
   const [form, setForm] = useState({
     registrationEnabled: true,
     requireEmailVerification: false,
+    virusScanEnabled: true,
   })
 
   useEffect(() => {
@@ -26,6 +27,7 @@ export function SecuritySettings() {
       setForm({
         registrationEnabled: settings['security.registrationEnabled'] !== 'false',
         requireEmailVerification: settings['security.requireEmailVerification'] === 'true',
+        virusScanEnabled: settings['security.virusScanEnabled'] !== 'false',
       })
     }
   }, [settings])
@@ -35,6 +37,7 @@ export function SecuritySettings() {
       updateSettings({
         'security.registrationEnabled': String(f.registrationEnabled),
         'security.requireEmailVerification': String(f.requireEmailVerification),
+        'security.virusScanEnabled': String(f.virusScanEnabled),
       }),
     onSuccess: () => toast.success('Einstellungen gespeichert'),
     onError: () => toast.error('Speichern fehlgeschlagen'),
@@ -84,6 +87,15 @@ export function SecuritySettings() {
             onChange={(v) => setForm({ ...form, requireEmailVerification: v })}
             label="E-Mail-Verifizierung erforderlich"
             description="Benutzer müssen ihre E-Mail-Adresse bestätigen, bevor sie die Plattform nutzen können."
+          />
+        </div>
+
+        <div className="p-4 bg-bg-elevated rounded-xl border border-border">
+          <Toggle
+            checked={form.virusScanEnabled}
+            onChange={(v) => setForm({ ...form, virusScanEnabled: v })}
+            label="Virenscan (ClamAV)"
+            description="Jede hochgeladene Datei wird vor der Veröffentlichung geprüft. Verschlüsselte Uploads sind ausgenommen, da der Server den Inhalt nicht einsehen kann."
           />
         </div>
       </div>
