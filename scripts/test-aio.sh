@@ -22,6 +22,7 @@ start() {
     settings=(-e 'SHAREDRIVE_APP_NAME=AIO managed fixture'
       -e SHAREDRIVE_MAX_FILE_SIZE_MIB=1 -e SHAREDRIVE_MAX_TRANSFER_SIZE_MIB=2
       -e SHAREDRIVE_USER_STORAGE_QUOTA_MIB=3 -e SHAREDRIVE_REGISTRATION_ENABLED=false
+      -e SHAREDRIVE_LOGO_URL=https://example.com/aio-fixture-logo.png
       -e SHAREDRIVE_SMTP_PASSWORD=aio-test-smtp-fixture -e SHAREDRIVE_S3_SECRET_KEY=aio-test-s3-fixture)
   fi
   docker run -d --name "$name" --network bridge --memory 6g --stop-timeout 120 \

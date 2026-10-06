@@ -6,6 +6,7 @@ import { minioClient } from '../lib/minio'
 import { prisma } from '../lib/prisma'
 import { config } from '../config'
 import { AppError } from '../middleware/errorHandler'
+import { environmentSettings } from '../lib/environmentSettings'
 
 const router = Router()
 
@@ -26,12 +27,19 @@ const SETTING_KEYS: Record<string, string> = {
   favicon: 'appearance.faviconUrl',
 }
 
+function guardManagedAsset(type: string): void {
+  const key = SETTING_KEYS[type]
+  if (environmentSettings[key] !== undefined)
+    throw new AppError(`Setting ${key} is managed by the deployment environment`, 400)
+}
+
 // POST /api/assets/upload?type=logo|favicon  (admin only)
 router.post('/upload', requireAdmin, async (req, res, next) => {
   try {
     const type = req.query.type as string
-    if (!ASSET_KEYS[type])
+    if (typeof type !== 'string' || !Object.prototype.hasOwnProperty.call(ASSET_KEYS, type))
       throw new AppError('Invalid type — use logo or favicon', 400)
+    guardManagedAsset(type)
 
     const { buffer, mimeType } = await new Promise<{
       buffer: Buffer
@@ -127,7 +135,9 @@ router.post('/upload', requireAdmin, async (req, res, next) => {
 router.delete('/:type', requireAdmin, async (req, res, next) => {
   try {
     const { type } = req.params
-    if (!ASSET_KEYS[type]) throw new AppError('Invalid type', 400)
+    if (!Object.prototype.hasOwnProperty.call(ASSET_KEYS, type))
+      throw new AppError('Invalid type', 400)
+    guardManagedAsset(type)
 
     await minioClient.removeObject(config.minio.bucket, ASSET_KEYS[type])
 
@@ -147,7 +157,8 @@ router.delete('/:type', requireAdmin, async (req, res, next) => {
 router.get('/:type', async (req, res, next) => {
   try {
     const { type } = req.params
-    if (!ASSET_KEYS[type]) throw new AppError('Not found', 404)
+    if (!Object.prototype.hasOwnProperty.call(ASSET_KEYS, type))
+      throw new AppError('Not found', 404)
 
     const key = ASSET_KEYS[type]
     const stat = await minioClient.statObject(config.minio.bucket, key)

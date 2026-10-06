@@ -58,6 +58,7 @@ async function settingsTest(phase) {
   assert.equal(publicSettings.maxTransferSizeBytes, managed ? 2097152 : 10737418240);
   assert.equal(publicSettings.userStorageQuotaBytes, managed ? 3145728 : 0);
   assert.equal(publicSettings.registrationEnabled, !managed);
+  assert.equal(publicSettings.logoUrl, managed ? 'https://example.com/aio-fixture-logo.png' : '');
   for (const name of ['email.password', 'storage.s3SecretKey']) {
     assert.equal(settings[name], managed ? '\u2022'.repeat(8) : '');
     assert.equal(publicSettings[name], undefined);
@@ -67,7 +68,7 @@ async function settingsTest(phase) {
   assert.deepEqual([...managedKeys].sort(), managed ? [
     'app.name', 'storage.maxFileSizeBytes', 'storage.maxTransferSizeBytes',
     'storage.userStorageQuotaBytes', 'security.registrationEnabled',
-    'email.password', 'storage.s3SecretKey',
+    'email.password', 'storage.s3SecretKey', 'appearance.logoUrl',
   ].sort() : []);
   if (phase === 'initial') {
     await json('/settings', { method: 'PUT', headers,
@@ -82,6 +83,15 @@ async function settingsTest(phase) {
     const changed = await json('/settings', { headers });
     assert.equal(changed.settings['app.description'], 'Persistent admin fixture');
     assert.equal(changed.settings['app.name'], 'AIO managed fixture');
+    const image = new FormData();
+    image.append('file', new Blob([Buffer.from([137, 80, 78, 71, 13, 10, 26, 10])],
+      { type: 'image/png' }), 'fixture.png');
+    const upload = await fetch(`${root}/assets/upload?type=logo`, { method: 'POST',
+      headers: { authorization: headers.authorization }, body: image });
+    assert.equal(upload.status, 400);
+    assert.match((await upload.json()).error, /managed by the deployment environment/);
+    const deletion = await json('/assets/logo', { method: 'DELETE', headers }, 400);
+    assert.match(deletion.error, /managed by the deployment environment/);
     const oversized = new FormData();
     oversized.append('file', new Blob([Buffer.alloc(1048577)], { type: 'text/plain' }), 'too-large.txt');
     const response = await fetch(`${root}/transfers`, { method: 'POST', body: oversized });
