@@ -89,10 +89,10 @@ Choose the standalone AIO template for a single native Docker-GUI entry, or keep
 Run this **one line in the Unraid terminal** to install the template:
 
 ```bash
-mkdir -p /boot/config/plugins/dockerMan/templates-user && curl -fL https://raw.githubusercontent.com/gottschalkfelix4-source/sharedrive/master/unraid/templates/sharedrive-aio.xml -o /boot/config/plugins/dockerMan/templates-user/user-sharedrive-aio.xml
+mkdir -p /boot/config/plugins/dockerMan/templates && curl -fL https://raw.githubusercontent.com/gottschalkfelix4-source/sharedrive/master/unraid/templates/sharedrive-aio.xml -o /boot/config/plugins/dockerMan/templates/ShareDrive-AIO.xml
 ```
 
-Select **Docker -> Add Container -> Template -> ShareDrive-AIO** and apply. Unraid downloads `ghcr.io/gottschalkfelix4-source/sharedrive-aio:latest`. No repository checkout, Compose, separate service containers or local builds are needed. The command downloads the DockerMan XML directly to `/boot/config/plugins/dockerMan/templates-user/user-sharedrive-aio.xml`; it does not start a container. Running it again replaces the template file, so back up any customized XML first.
+Select **Docker -> Add Container -> Template -> ShareDrive-AIO** under **Default templates** and apply. Unraid downloads `ghcr.io/gottschalkfelix4-source/sharedrive-aio:latest`. No repository checkout, Compose, separate service containers or local builds are needed. The command downloads the DockerMan XML directly to `/boot/config/plugins/dockerMan/templates/ShareDrive-AIO.xml`; it does not start a container. DockerMan saves the applied container configuration separately in `templates-user`. Running the download again replaces the default template file, so back up any customized default XML first.
 
 The template exposes one HTTP port, **8088 -> 3000**, and one persistent directory, **`/mnt/user/appdata/sharedrive-aio -> /data`**. Select another host port if an existing stack already uses 8088. Keep bridge networking, provide at least 6 GB RAM, and set **Trusted reverse proxy** to the actual connecting proxy IP/CIDR. The advanced SMTP allowlist is optional. Do not enable privileged mode or mount the Docker socket.
 

@@ -6,7 +6,11 @@ temp_dir=$(mktemp -d)
 trap 'rm -rf -- "$temp_dir"' EXIT
 installer="$repo_dir/unraid/install-aio-template.sh"
 template="$repo_dir/unraid/templates/sharedrive-aio.xml"
-target="$temp_dir/templates/user-sharedrive-aio.xml"
+target="$temp_dir/templates/ShareDrive-AIO.xml"
+
+grep -Fq "templates_dir=\${SHAREDRIVE_TEMPLATES_DIR:-/boot/config/plugins/dockerMan/templates}" "$installer"
+grep -Fq 'mkdir -p /boot/config/plugins/dockerMan/templates && curl -fL' "$repo_dir/README.md"
+grep -Fq -- '-o /boot/config/plugins/dockerMan/templates/ShareDrive-AIO.xml' "$repo_dir/README.md"
 
 SHAREDRIVE_TEMPLATES_DIR="$temp_dir/templates" bash "$installer"
 cmp -- "$template" "$target"
@@ -16,7 +20,7 @@ printf '\n<!-- operator customization -->\n' >> "$target"
 cp -- "$target" "$temp_dir/custom.xml"
 SHAREDRIVE_TEMPLATES_DIR="$temp_dir/templates" bash "$installer"
 cmp -- "$template" "$target"
-backup=$(find "$temp_dir/templates" -name '.user-sharedrive-aio.backup.*')
+backup=$(find "$temp_dir/templates" -name '.ShareDrive-AIO.backup.*')
 [[ -n "$backup" ]]
 cmp -- "$temp_dir/custom.xml" "$backup"
 [[ -z $(find "$temp_dir/templates" -name '*.staged.*') ]]
@@ -49,7 +53,7 @@ curl() {
 }
 export -f curl
 SHAREDRIVE_TEMPLATES_DIR="$temp_dir/downloaded" bash "$temp_dir/install-aio-template.sh"
-cmp -- "$template" "$temp_dir/downloaded/user-sharedrive-aio.xml"
+cmp -- "$template" "$temp_dir/downloaded/ShareDrive-AIO.xml"
 [[ $(wc -l < "$SHAREDRIVE_AIO_TEST_CURL_LOG") -eq 1 ]]
 for mode in invalid failed; do
   export SHAREDRIVE_AIO_TEST_DOWNLOAD_MODE=$mode
@@ -57,7 +61,7 @@ for mode in invalid failed; do
     printf 'Installer accepted an %s download.\n' "$mode" >&2
     exit 1
   fi
-  cmp -- "$template" "$temp_dir/downloaded/user-sharedrive-aio.xml"
+  cmp -- "$template" "$temp_dir/downloaded/ShareDrive-AIO.xml"
   [[ $(find "$temp_dir/downloaded" -type f | wc -l) -eq 1 ]]
 done
 [[ $(wc -l < "$SHAREDRIVE_AIO_TEST_CURL_LOG") -eq 3 ]]

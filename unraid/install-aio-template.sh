@@ -2,7 +2,7 @@
 # Install the standalone AIO template; do not create or start containers.
 set -euo pipefail
 
-templates_dir=${SHAREDRIVE_TEMPLATES_DIR:-/boot/config/plugins/dockerMan/templates-user}
+templates_dir=${SHAREDRIVE_TEMPLATES_DIR:-/boot/config/plugins/dockerMan/templates}
 script_dir=$(cd -- "$(dirname -- "${BASH_SOURCE[0]}")" && pwd)
 url=https://raw.githubusercontent.com/gottschalkfelix4-source/sharedrive/master/unraid/templates/sharedrive-aio.xml
 temp_dir=$(mktemp -d)
@@ -30,16 +30,16 @@ if [[ "$content" != *'<Container version="2">'* || "$content" != *'</Container>'
 fi
 
 mkdir -p -- "$templates_dir"
-target="$templates_dir/user-sharedrive-aio.xml"
+target="$templates_dir/ShareDrive-AIO.xml"
 if cmp -s -- "$temp_dir/template.xml" "$target"; then
   printf 'Unchanged: %s\n' "$target"
 else
   if [[ -e "$target" ]]; then
-    backup=$(mktemp "$templates_dir/.user-sharedrive-aio.backup.XXXXXX")
+    backup=$(mktemp "$templates_dir/.ShareDrive-AIO.backup.XXXXXX")
     cp -p -- "$target" "$backup"
     printf 'Previous template saved: %s\n' "$backup"
   fi
-  staged=$(mktemp "$templates_dir/.user-sharedrive-aio.staged.XXXXXX")
+  staged=$(mktemp "$templates_dir/.ShareDrive-AIO.staged.XXXXXX")
   cp -- "$temp_dir/template.xml" "$staged"
   chmod 0644 "$staged"
   mv -f -- "$staged" "$target"

@@ -13,9 +13,12 @@ bundles the web application, PostgreSQL 16, Redis, MinIO and ClamAV. Install
 `unraid/templates/sharedrive-aio.xml` using the README one-liner, then select
 **Docker -> Add Container -> Template -> ShareDrive-AIO**. This creates one native
 DockerMan entry with WebUI, autostart and normal image updates; Compose and external
-infrastructure are not required. The template installer only imports XML. It stages
-downloads before installation and saves changed previous templates as hidden backup
-files in DockerMan's templates-user directory.
+infrastructure are not required. The README command imports XML into DockerMan's
+default-template directory, `/boot/config/plugins/dockerMan/templates/ShareDrive-AIO.xml`,
+without starting a container. Repeating it overwrites that default template.
+The optional `unraid/install-aio-template.sh` helper uses the same destination,
+stages downloads and saves changed previous templates as hidden backup files.
+DockerMan stores applied container configurations separately in `templates-user`.
 
 Use bridge networking, one HTTP mapping (8088 to container port 3000 by default),
 and one new appdata bind (`/mnt/user/appdata/sharedrive-aio` to `/data`). Reserve at
