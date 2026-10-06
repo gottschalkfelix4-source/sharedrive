@@ -34,15 +34,3 @@ export function requireSetupToken(req: Request): void {
   if (!crypto.timingSafeEqual(a, b))
     throw new AppError('Valid setup token required', 401)
 }
-export function setEnvVar(content: string, key: string, value: string): string {
-  // Use the common unquoted subset understood by both Compose and docker --env-file.
-  if (/[\s\x00\x22\x27\x5c$#]/.test(value))
-    throw new AppError(
-      'Credentials cannot contain whitespace, quotes, backslashes, $ or #',
-      400
-    )
-  const pattern = new RegExp(`^${key}=.*$`, 'm')
-  return pattern.test(content)
-    ? content.replace(pattern, () => `${key}=${value}`)
-    : `${content}\n${key}=${value}\n`
-}

@@ -272,14 +272,3 @@ export async function statStoredObject(key: string): Promise<number> {
   const { client, bucket } = await getActiveStorage()
   return (await client.statObject(bucket, key)).size
 }
-
-export function reloadLocalStorage(): void {
-  minioClient = new Minio.Client({
-    endPoint: config.minio.endpoint,
-    port: config.minio.port,
-    useSSL: config.minio.useSSL,
-    accessKey: config.minio.accessKey,
-    secretKey: config.minio.secretKey,
-  })
-  cachedStorage = null
-}

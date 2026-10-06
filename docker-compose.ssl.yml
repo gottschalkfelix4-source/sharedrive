@@ -1,8 +1,0 @@
-# DOMAIN and ACME_EMAIL are required in .env; public 80/443 must reach Caddy.
-services:
-  caddy:
-    environment:
-      DOMAIN: ${DOMAIN:?Set DOMAIN in .env}
-      ACME_EMAIL: ${ACME_EMAIL:?Set ACME_EMAIL in .env}
-    volumes:
-      - ./Caddyfile.tls:/etc/caddy/Caddyfile:ro

@@ -8,29 +8,26 @@ base_url=https://raw.githubusercontent.com/gottschalkfelix4-source/sharedrive/ma
 temp_dir=$(mktemp -d)
 trap 'rm -rf -- "$temp_dir"' EXIT
 
-# Stage and check both templates before changing existing user templates.
-for name in sharedrive-backend sharedrive-web; do
-  if [[ -f "$script_dir/templates/$name.xml" ]]; then
-    cp -- "$script_dir/templates/$name.xml" "$temp_dir/$name.xml"
-  else
-    curl --fail --silent --show-error --location --proto '=https' --proto-redir '=https' \
-      "$base_url/$name.xml" --output "$temp_dir/$name.xml"
-  fi
-  content=$(cat -- "$temp_dir/$name.xml")
-  if [[ "$content" != *'<Container version="2">'* || "$content" != *'</Container>'* ]]; then
-    printf 'Invalid template: %s\n' "$name" >&2
-    exit 1
-  fi
-done
+# Stage and check the application template before changing its installed copy.
+name=sharedrive-backend
+if [[ -f "$script_dir/templates/$name.xml" ]]; then
+  cp -- "$script_dir/templates/$name.xml" "$temp_dir/$name.xml"
+else
+  curl --fail --silent --show-error --location --proto '=https' --proto-redir '=https' \
+    "$base_url/$name.xml" --output "$temp_dir/$name.xml"
+fi
+content=$(cat -- "$temp_dir/$name.xml")
+if [[ "$content" != *'<Container version="2">'* || "$content" != *'</Container>'* ]]; then
+  printf 'Invalid template: %s\n' "$name" >&2
+  exit 1
+fi
 
 mkdir -p -- "$templates_dir"
-for name in sharedrive-backend sharedrive-web; do
-  target="$templates_dir/user-$name.xml"
+target="$templates_dir/user-$name.xml"
+if cmp -s -- "$temp_dir/$name.xml" "$target"; then
+  printf 'Unchanged: %s\n' "$target"
+else
   if [[ -e "$target" ]]; then
-    if cmp -s -- "$temp_dir/$name.xml" "$target"; then
-      printf 'Unchanged: %s\n' "$target"
-      continue
-    fi
     backup=$(mktemp "$templates_dir/.user-$name.backup.XXXXXX")
     cp -p -- "$target" "$backup"
     printf 'Previous template saved: %s\n' "$backup"
@@ -40,6 +37,6 @@ for name in sharedrive-backend sharedrive-web; do
   chmod 0644 "$staged"
   mv -f -- "$staged" "$target"
   printf 'Installed: %s\n' "$target"
-done
-printf 'Unraid: Docker -> Add Container -> Template -> ShareDrive-Backend / ShareDrive-Web.\n'
+fi
+printf 'Unraid: Docker -> Add Container -> Template -> ShareDrive-Backend.\n'
 printf 'Prepare the local images and infrastructure as documented in the README before applying.\n'

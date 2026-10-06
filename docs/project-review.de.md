@@ -1,5 +1,30 @@
 # ShareDrive: Projektprüfung und umgesetzte Verbesserungen
 
+**Historischer Prüfbericht, ergänzt am 6. Oktober 2026:** Die unten dokumentierten
+Testergebnisse beziehen sich auf die damalige Architektur mit separatem Web/nginx,
+Caddy und einem Setup mit Credentialrotation. Diese Architektur wurde anschließend
+vereinfacht: Ein App-Container liefert Frontend und API über HTTP aus; Zertifikate
+und HTTPS übernimmt der vorhandene externe Reverse Proxy. PostgreSQL, Redis, MinIO
+und ClamAV bleiben bestehen. Der Setup-Assistent prüft das lokale Token und erfasst
+öffentliche URL und Admin-Konto; er ändert weder Infrastruktur-Secrets noch TLS.
+Die aktuellen Betriebsanweisungen stehen in [README](../README.md) und
+[Operations](operations.md). Die historischen Testzahlen belegen nicht die neue
+Architektur; deren Prüfungen sind im zugehörigen Änderungsstand/CI zu verfolgen.
+
+## Aktueller Deployment-Stand
+
+- Ein gemeinsames App-Image, gebaut mit `docker build -f backend/Dockerfile -t sharedrive:unraid .`.
+- Fünf Dienste im vollständigen Compose-Stack; nur die App veröffentlicht Port 8088.
+- Ein DockerMan-App-Template plus vier interne Infrastruktur-Dienste als Alternative.
+- Zufällige Secrets und privates Setup-Token werden vor Erststart lokal erzeugt;
+  erneute Vorbereitung erhält vorhandene Credentials und Daten.
+- Keine eingebauten Proxy- oder Zertifikatsdienste. `TRUST_PROXY` vertraut standardmäßig
+  nur Loopback; der Betreiber trägt die tatsächlich verbundene Proxy-IP/CIDR ein.
+- Vorhandene Datenvolumes, Appdata und Migrationen bleiben erhalten. Alte Proxy-Container
+  können als Orphans entfernt werden; `down -v` ist keine Upgrade-Anweisung.
+
+## Historische Prüfung
+
 Stand: 6. Oktober 2026. Geprüft wurden Backend-Routen, Authentifizierung, Datenmodell,
 Upload-/Download- und Scanabläufe, Browser-Verschlüsselung, Frontend, Abhängigkeiten,
 Docker-/Proxy-Konfiguration und Betriebsanleitungen. Nach der ersten Prüfung wurden
@@ -31,7 +56,7 @@ tatsächlich ausgeführt wurden.
 | 15 · mittel | Ports/TLS-Override, Proxy-Schema/IP-Vertrauen und Deploymentanleitung waren inkonsistent. | Getrennte HTTP-/TLS-Caddy-Konfiguration, funktionierende Portvariablen, erhaltene Proxy-Schemata, begrenztes Proxyvertrauen, Readiness-/Healthchecks. Versionierte Images, persistenter Token, unprivilegiertes Backend, CPU-/RAM-Limits, Dockerignore und Backup-/Restore-Anleitung. Unraid-Templates, Infrastruktur-Compose und wiederholbarer Importer ergänzt. |
 | 16 · mittel/niedrig | Alle Frontendseiten lagen im Startbundle, Hookreihenfolge war instabil, Uploadabbruch/Deadlines fehlten; keine Tests/CI/Lizenzdatei. | Lazy-Routes/Charts/Karte, feste Hookreihenfolge, typisierte Transfer-API, Uploadabbruch, begrenzte Retries und Deadlines. Labels, IDs und Modal-Fokusführung verbessert. Regressionstests, CI mit separater Storage-Integration und MIT-Lizenzdatei ergänzt. |
 
-## Unraid und Betrieb
+## Unraid und Betrieb (historisch)
 
 Die [README](../README.md#unraid) enthält den gewünschten Einzeiler für den Import
 beider DockerMan-Templates sowie lokale Image-Builds, Infrastrukturstart,
@@ -49,7 +74,7 @@ und [Testbefehle / isolierte Fixtures](testing.md). MinIO wird aus einem offizie
 festgelegten Source-Commit mit Go-Checksumprüfung gebaut; seine AGPL-3.0-Lizenz ist
 von der MIT-Lizenz der Anwendung getrennt.
 
-## Abhängigkeiten und verbleibende Wartungsarbeit
+## Abhängigkeiten und verbleibende Wartungsarbeit (historisch)
 
 | Audit | Aktueller Befund |
 | --- | --- |
@@ -70,7 +95,7 @@ Das initiale JS-Bundle sank von rund **1,19 MB / 346 kB gzip** auf
 bei rund **537 kB** und erzeugen eine Buildwarnung; weitere Verkleinerung ist möglich.
 Einzelne ältere Verwaltungsoberflächen enthalten weiterhin `any`-Typen.
 
-## Ausgeführte Prüfungen und Grenzen
+## Ausgeführte Prüfungen und Grenzen (historisch)
 
 | Prüfung | Ergebnis / Aussagegrenze |
 | --- | --- |

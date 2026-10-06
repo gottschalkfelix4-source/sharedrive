@@ -3,6 +3,44 @@ on: [push, pull_request]
 permissions:
   contents: read
 jobs:
+  deployment:
+    runs-on: ubuntu-24.04
+    timeout-minutes: 20
+    steps:
+      - uses: actions/checkout@v5
+      - name: Validate first-run configuration and shell scripts
+        run: |
+          set -euo pipefail
+          bash -n start.sh unraid/prepare-config.sh unraid/install-templates.sh scripts/backup.sh
+          bash scripts/test-deployment.sh
+          SHAREDRIVE_APPDATA="$PWD" bash unraid/prepare-config.sh --compose
+          before=$(sha256sum .env .setup/token)
+          SHAREDRIVE_APPDATA="$PWD" bash unraid/prepare-config.sh --compose
+          test "$before" = "$(sha256sum .env .setup/token)"
+          docker compose config --quiet
+          SHAREDRIVE_APPDATA="$PWD" docker compose --env-file .env -f unraid/compose.yml config --quiet
+          SHAREDRIVE_APPDATA="$PWD" docker compose --env-file .env -f unraid/compose.infrastructure.yml config --quiet
+          test "$(docker compose config --services | wc -l)" -eq 5
+      - name: Build the combined application image
+        run: docker build -t sharedrive:ci -f backend/Dockerfile .
+      - name: Smoke test web interface and API in the built image
+        run: |
+          set -euo pipefail
+          docker run -d --name sharedrive-web-smoke -p 127.0.0.1:18088:3000 \
+            -e NODE_ENV=production \
+            -e DATABASE_URL=postgresql://fixture:fixture@127.0.0.1:5432/fixture \
+            sharedrive:ci node -e "require('./dist/index').app.listen(3000, '0.0.0.0')"
+          for ((attempt=0; attempt<30; attempt++)); do
+            if curl -fsS http://127.0.0.1:18088/api/health; then break; fi
+            sleep 1
+          done
+          curl -fsS http://127.0.0.1:18088/ | grep -q '<div id="root">'
+          curl -fsS http://127.0.0.1:18088/setup | grep -q '<div id="root">'
+          test "$(curl -s -o /dev/null -w '%{http_code}' http://127.0.0.1:18088/api/missing)" = 404
+          test "$(curl -s -o /dev/null -w '%{http_code}' http://127.0.0.1:18088/assets/missing.js)" = 404
+      - name: Container logs on failure
+        if: failure()
+        run: docker logs sharedrive-web-smoke || true
   frontend:
     runs-on: ubuntu-24.04
     steps:
@@ -89,7 +127,7 @@ jobs:
           docker run -d --name sharedrive-ci-minio -p 127.0.0.1:19000:9000 -e MINIO_ROOT_USER=ci-minio -e MINIO_ROOT_PASSWORD=ci-fixture-minio-password sharedrive-minio:ci
           docker run -d --name sharedrive-ci-clamav -p 127.0.0.1:13310:3310 clamav/clamav:1.4.3
           ready=false
-          for attempt in {1..100}; do
+          for ((attempt=0; attempt<100; attempt++)); do
             if curl -fsS http://127.0.0.1:19000/minio/health/ready && docker exec sharedrive-ci-clamav clamdscan --ping 1; then ready=true; break; fi
             sleep 3
           done

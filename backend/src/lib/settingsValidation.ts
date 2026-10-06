@@ -21,7 +21,8 @@ const url = z
       !u.username &&
       !u.password &&
       !u.search &&
-      !u.hash
+      !u.hash &&
+      u.pathname === '/'
     )
   }, 'Invalid application URL')
 const schemas: Record<string, z.ZodTypeAny> = {

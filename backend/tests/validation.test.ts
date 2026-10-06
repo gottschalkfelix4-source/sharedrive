@@ -10,7 +10,6 @@ import {
 } from '../src/lib/uploadValidation'
 import { validateSettingUpdates } from '../src/lib/settingsValidation'
 import { DEFAULT_SETTINGS } from '../src/routes/settings'
-import { setEnvVar } from '../src/lib/bootstrap'
 import { anonymizeIp } from '../src/services/logger'
 
 test('untrusted upload metadata rejects invalid sizes, unexpected fields and missing encryption context', () => {
@@ -67,6 +66,7 @@ test('settings validation rejects unknown keys, inconsistent limits and unsafe U
     { 'privacy.logRetentionDays': 'NaN' },
     { 'app.baseUrl': 'javascript:alert(1)' },
     { 'app.baseUrl': 'https://user:pass@example.com' },
+    { 'app.baseUrl': 'https://share.example.com/subpath' },
     { 'storage.maxFileSizeBytes': '20000000000' },
     { 'security.requireEmailVerification': 'true' },
   ])
@@ -75,22 +75,6 @@ test('settings validation rejects unknown keys, inconsistent limits and unsafe U
     validateSettingUpdates({ 'app.name': 'New name' }, DEFAULT_SETTINGS),
     { 'app.name': 'New name' }
   )
-})
-test('env serialization preserves literal replacement characters and rejects multiline injection', () => {
-  assert.equal(
-    setEnvVar('OTHER=kept\nJWT_SECRET=old\n', 'JWT_SECRET', 'value&@!'),
-    'OTHER=kept\nJWT_SECRET=value&@!\n'
-  )
-  for (const value of [
-    'a\nADMIN=true',
-    '$(whoami)',
-    'a\\b',
-    'a b',
-    'a#b',
-    "a'b",
-    'a"b',
-  ])
-    assert.throws(() => setEnvVar('', 'KEY', value))
 })
 test('IP anonymization handles compressed IPv6, mapped IPv4 and invalid addresses', () => {
   assert.equal(anonymizeIp('192.168.1.42'), '192.168.1.0')

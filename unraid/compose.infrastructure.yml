@@ -1,5 +1,5 @@
-# Application containers are managed by the two Unraid XML templates.
-# This file manages only their dependencies, on the same external network.
+# The application is managed by the single Unraid XML template.
+# Dependencies have no published ports and share the external app network.
 name: sharedrive-unraid
 
 services:
@@ -65,21 +65,6 @@ services:
       timeout: 10s
       start_period: 5m
       retries: 10
-    restart: unless-stopped
-    networks: [sharedrive]
-
-  caddy:
-    environment:
-      CADDY_TRUSTED_PROXIES: ${CADDY_TRUSTED_PROXIES:-127.0.0.1/32}
-    image: caddy:2.10.2-alpine@sha256:4c6e91c6ed0e2fa03efd5b44747b625fec79bc9cd06ac5235a779726618e530d
-    ports:
-      - "${HTTP_PORT:-8088}:80"
-      - "${HTTPS_PORT:-8443}:443"
-      - "${HTTPS_PORT:-8443}:443/udp"
-    volumes:
-      - ${SHAREDRIVE_APPDATA:-/mnt/user/appdata/sharedrive}/Caddyfile:/etc/caddy/Caddyfile
-      - ${SHAREDRIVE_APPDATA:-/mnt/user/appdata/sharedrive}/caddy/data:/data
-      - ${SHAREDRIVE_APPDATA:-/mnt/user/appdata/sharedrive}/caddy/config:/config
     restart: unless-stopped
     networks: [sharedrive]
 

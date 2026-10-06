@@ -57,6 +57,64 @@ test.beforeEach(async ({ page }) => {
   )
 })
 
+test('first setup only needs token, public URL and admin account', async ({ page }) => {
+  await page.route('**/api/setup/status', (route) =>
+    route.fulfill({ json: { needsSetup: true } })
+  )
+  const setupRequests: string[] = []
+  await page.route('**/api/setup', (route) => {
+    setupRequests.push(route.request().url())
+    expect(route.request().headers()['x-setup-token']).toBe('fixture-setup-token')
+    expect(route.request().postDataJSON()).toEqual({
+      email: 'admin@example.com', username: 'admin', password: 'Fixture123!',
+      baseUrl: 'https://share.example.com',
+    })
+    return route.fulfill({ status: 201, json: { message: 'Admin account created' } })
+  })
+  await page.route('**/api/auth/login', (route) => route.fulfill({
+    json: { token: 'fixture-session', user: { id: 'admin', email: 'admin@example.com', username: 'admin', role: 'ADMIN' } },
+  }))
+  await page.goto('/setup')
+  await expect(page.getByRole('heading', { name: 'ShareDrive einrichten' })).toBeVisible()
+  await expect(page.getByText(/Let's Encrypt|Domain & SSL|Zugangsdaten festlegen/)).toHaveCount(0)
+  await page.getByLabel('Einmaliges Setup-Token').fill('fixture-setup-token')
+  await page.getByLabel('Öffentliche URL').fill('https://share.example.com/')
+  await page.getByLabel('E-Mail-Adresse').fill('admin@example.com')
+  await page.getByLabel('Benutzername').fill('admin')
+  await page.getByLabel('Passwort', { exact: true }).fill('Fixture123!')
+  await page.getByLabel('Passwort bestätigen').fill('Fixture123!')
+  await page.getByRole('button', { name: 'Einrichtung abschließen' }).click()
+  await expect(page.getByRole('heading', { name: 'Einrichtung abgeschlossen' })).toBeVisible()
+  expect(setupRequests).toHaveLength(1)
+  expect(await page.evaluate(() => sessionStorage.getItem('setup-token'))).toBeNull()
+  await expect(page.getByRole('button', { name: 'Zum Admin-Bereich' })).toBeVisible()
+})
+
+test('setup remains complete when automatic login fails', async ({ page }) => {
+  await page.route('**/api/setup', (route) =>
+    route.fulfill({ status: 201, json: { message: 'Admin account created' } })
+  )
+  await page.route('**/api/auth/login', (route) =>
+    route.fulfill({ status: 503, json: { error: 'Login temporarily unavailable' } })
+  )
+  await page.setViewportSize({ width: 390, height: 844 })
+  await page.goto('/setup')
+  await expect(page.getByRole('heading', { name: 'ShareDrive einrichten' })).toBeVisible()
+  await page.screenshot({ path: 'test-results/setup-mobile.png', fullPage: true })
+  expect(await page.evaluate(() => document.documentElement.scrollWidth <= window.innerWidth)).toBe(true)
+  await page.setViewportSize({ width: 1440, height: 1000 })
+  await page.screenshot({ path: 'test-results/setup-desktop.png', fullPage: true })
+  await page.getByLabel('Einmaliges Setup-Token').fill('fixture-setup-token')
+  await page.getByLabel('E-Mail-Adresse').fill('admin@example.com')
+  await page.getByLabel('Benutzername').fill('admin')
+  await page.getByLabel('Passwort', { exact: true }).fill('Fixture123!')
+  await page.getByLabel('Passwort bestätigen').fill('Fixture123!')
+  await page.getByRole('button', { name: 'Einrichtung abschließen' }).click()
+  await expect(page.getByRole('heading', { name: 'Einrichtung abgeschlossen' })).toBeVisible()
+  await expect(page.getByRole('button', { name: 'Zur Anmeldung' })).toBeVisible()
+  expect(await page.evaluate(() => sessionStorage.getItem('setup-token'))).toBeNull()
+})
+
 test('wrong password remains editable; individual and ZIP downloads request scoped tickets', async ({
   page,
 }) => {

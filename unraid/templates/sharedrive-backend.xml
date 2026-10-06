@@ -1,7 +1,7 @@
 <?xml version="1.0" encoding="utf-8"?>
 <Container version="2">
   <Name>ShareDrive-Backend</Name>
-  <Repository>sharedrive-backend:unraid</Repository>
+  <Repository>sharedrive:unraid</Repository>
   <Registry/>
   <Network>sharedrive</Network>
   <MyIP/>
@@ -9,15 +9,14 @@
   <Privileged>false</Privileged>
   <Support>https://github.com/gottschalkfelix4-source/sharedrive/issues</Support>
   <Project>https://github.com/gottschalkfelix4-source/sharedrive</Project>
-  <Overview>ShareDrive API. Build the local sharedrive-backend:unraid image first using the README's Unraid instructions. Requires the sharedrive Docker network and PostgreSQL, Redis, MinIO and ClamAV. No backend port is published. The existing .env and Caddyfile must be regular files before applying this template. Startup applies versioned database migrations; baseline legacy db-push installations and back up before upgrades. Runs as UID/GID 1000.</Overview>
+  <Overview>ShareDrive web application and API in one container. Build sharedrive:unraid from the repository root with backend/Dockerfile. Requires the sharedrive Docker network and PostgreSQL, Redis, MinIO and ClamAV. HTTP is published on port 8088; your existing reverse proxy manages HTTPS and certificates. Prepare the .env and setup token before applying this template. Startup applies versioned database migrations; baseline legacy db-push installations and back up before upgrades. Runs as UID/GID 1000.</Overview>
   <Category>Network:Other Productivity:</Category>
-  <WebUI/>
+  <WebUI>http://[IP]:[PORT:3000]/</WebUI>
   <TemplateURL>https://raw.githubusercontent.com/gottschalkfelix4-source/sharedrive/master/unraid/templates/sharedrive-backend.xml</TemplateURL>
   <ExtraParams>--network-alias=backend --env-file=/mnt/user/appdata/sharedrive/.env --restart=unless-stopped --memory=1g --cpus=2</ExtraParams>
   <PostArgs/>
-  <Config Name="Environment file" Target="/app/.env" Default="/mnt/user/appdata/sharedrive/.env" Mode="rw" Description="Existing .env file. Keep the host path in Extra Parameters (--env-file) in sync if you change this path. The setup wizard writes infrastructure credentials here." Type="Path" Display="always" Required="true" Mask="false">/mnt/user/appdata/sharedrive/.env</Config>
-  <Config Name="Caddy configuration" Target="/app/Caddyfile" Default="/mnt/user/appdata/sharedrive/Caddyfile" Mode="rw" Description="Existing writable Caddyfile, also used by the infrastructure stack." Type="Path" Display="always" Required="true" Mask="false">/mnt/user/appdata/sharedrive/Caddyfile</Config>
+  <Config Name="HTTP port" Target="3000" Default="8088" Mode="tcp" Description="Forward your existing HTTPS reverse proxy to this HTTP port." Type="Port" Display="always" Required="true" Mask="false">8088</Config>
   <Config Name="Setup token directory" Target="/app/.setup" Default="/mnt/user/appdata/sharedrive/.setup" Mode="rw" Description="Private persistent setup token; owner UID/GID 1000, directory 0700 and token 0600." Type="Path" Display="always" Required="true" Mask="false">/mnt/user/appdata/sharedrive/.setup</Config>
   <Config Name="Node environment" Target="NODE_ENV" Default="production" Mode="" Description="Production security settings." Type="Variable" Display="advanced" Required="true" Mask="false">production</Config>
-  <Config Name="API port" Target="PORT" Default="3000" Mode="" Description="Internal port expected by nginx; no host port mapping is needed." Type="Variable" Display="advanced" Required="true" Mask="false">3000</Config>
+  <Config Name="Application port" Target="PORT" Default="3000" Mode="" Description="Fixed internal HTTP port for the web application and API." Type="Variable" Display="advanced" Required="true" Mask="false">3000</Config>
 </Container>

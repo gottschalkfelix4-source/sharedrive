@@ -1,511 +1,184 @@
-<div align="center">
-
 # ShareDrive
 
-**Self-hosted file sharing — fast, private, beautiful.**
+Self-hosted file sharing with anonymous transfers, registered accounts, optional browser encryption and an admin panel.
 
-A WeTransfer-style platform you run yourself. Upload files, share a link, done.
-Anonymous transfers or registered accounts with full history — your choice.
+ShareDrive serves the web interface and API from **one application container**. Your existing reverse proxy handles HTTPS and certificates. No additional proxy or certificate manager is needed.
 
-[![Docker](https://img.shields.io/badge/Docker-Compose-2496ED?logo=docker&logoColor=white)](https://docs.docker.com/compose/)
-[![Node.js](https://img.shields.io/badge/Node.js-24-339933?logo=node.js&logoColor=white)](https://nodejs.org/)
-[![React](https://img.shields.io/badge/React-18-61DAFB?logo=react&logoColor=black)](https://react.dev/)
-[![TypeScript](https://img.shields.io/badge/TypeScript-5-3178C6?logo=typescript&logoColor=white)](https://www.typescriptlang.org/)
-[![License](https://img.shields.io/badge/License-MIT-green)](LICENSE)
+## Deployment
 
-</div>
+The complete stack contains five services:
 
----
+```text
+Browser -- HTTPS --> Your reverse proxy -- HTTP :8088 --> ShareDrive :3000
+                                                           |-- PostgreSQL
+                                                           |-- Redis
+                                                           |-- MinIO
+                                                           `-- ClamAV
+```
 
-## Features
+PostgreSQL stores users, transfers, settings and durable upload/scan/deletion jobs. MinIO stores objects, Redis provides shared rate limits and ClamAV scans plaintext uploads. Only ShareDrive publishes a host port. Files stream through the app; browsers never access MinIO directly.
 
-- **Drag & drop uploads** — drop files, set an optional title, password, expiry and download limit, share the link
-- **End-to-end encryption** — AES-256-GCM, encrypted in the browser before upload; the key lives only in the download link fragment, never sent to the server
-- **Anonymous transfers** — no account needed for senders or receivers
-- **Registered accounts** — full transfer history, longer retention, dashboard
-- **Admin panel** — stats, charts, user & transfer management, all settings in the web UI
-- **First-time setup wizard** — guided domain + admin account configuration on first launch
-- **Auto-SSL** — optional built-in HTTPS via Caddy + Let's Encrypt, no reverse proxy required
-- **Reverse-proxy ready** — drop behind Caddy, nginx, or Traefik; SSL handled upstream if preferred
-- **Email verification** — optional SMTP-backed verification with test button
-- **Privacy controls** — masked log IPs, configurable retention, privacy policy + imprint pages; legal compliance depends on the deployment
-- **Client encryption** — protects contents and encrypted names from the server while the share-link key remains private; server administrators can access unencrypted transfers and metadata
-- **Configurable** — storage limits, retention periods, appearance (color, logo), security policies — all via web UI
+Requirements: Docker, Docker Compose v2, Git, Bash and OpenSSL. Allow at least 3 GB RAM for ClamAV in addition to the application, database and storage, and enough build space for MinIO.
 
----
-
-## Stack
-
-| Layer | Technology |
-|---|---|
-| Frontend | React 18, Vite, TypeScript, Tailwind CSS, Framer Motion |
-| Backend | Node.js, Express, TypeScript, Prisma ORM |
-| Database | PostgreSQL 16 |
-| Object storage | MinIO (S3-compatible) |
-| Shared rate limits | Redis 7 |
-| Durable upload/scan/deletion jobs | PostgreSQL |
-| Proxy / SSL | nginx (built-in) · Caddy (optional, auto-SSL) |
-| Orchestration | Docker Compose |
-
----
-
-## Quick Start
-
-**Requirements:** Docker + Docker Compose v2, Git, Bash and OpenSSL; several GB of RAM/build space for MinIO and ClamAV.
+### Docker Compose
 
 ```bash
 git clone https://github.com/gottschalkfelix4-source/sharedrive.git
 cd sharedrive
-SHAREDRIVE_APPDATA="$PWD" bash unraid/prepare-config.sh --compose
+bash unraid/prepare-config.sh --compose
 ```
 
-The helper creates random local credentials and a private setup token. Start the stack:
+The helper generates database, MinIO and JWT secrets plus a private setup token before first start. Repeating it preserves existing credentials and data. Configure `HTTP_PORT` and `TRUST_PROXY` in `.env` for your reverse proxy, then start:
 
 ```bash
-docker compose up --build -d --wait
+docker compose up --build -d --wait --wait-timeout 900
 ```
 
-Read `.setup/token` locally and enter it in the wizard at **http://localhost**. After credential rotation, recreate MinIO and backend as instructed by the wizard before creating the admin account. See [operations](docs/operations.md).
+Alternatively, `bash start.sh` prepares configuration and starts the stack. The first ClamAV signature download and MinIO build can take several minutes.
 
-> `start.sh` wraps these steps and auto-creates `.env` from the example:
-> ```bash
-> chmod +x start.sh && ./start.sh
-> ```
+Point your reverse proxy at `http://SERVER-IP:8088`, open the public HTTPS URL, enter the token read locally from `.setup/token`, set the public URL and create the admin account. The wizard does not change infrastructure credentials or configure certificates. Setup closes once an admin exists.
 
----
+### Reverse Proxy
 
-## Auto-SSL (no reverse proxy needed)
+Use your proxy's existing certificate configuration. Route the entire site, including `/api`, to ShareDrive's HTTP host port, default **8088**. Serve the application at the domain root; subpath deployment is not supported.
 
-ShareDrive ships with an optional Caddy sidecar that provisions and renews Let's Encrypt certificates automatically.
+- Preserve the public `Host` header, including a nonstandard public port when used.
+- Set `X-Forwarded-Proto` to the public scheme and overwrite `X-Forwarded-For` with the real client address. Do not pass unchecked client forwarding headers through.
+- Set `TRUST_PROXY` in `.env` to the **actual connecting proxy IP or CIDR**, as seen by the application, then recreate the app. The default `loopback` does not automatically trust your LAN or Docker network. Avoid broad private ranges or trusting all clients.
+- Allow request bodies large enough for your configured upload limits, increase upload/read timeouts and disable request buffering where supported.
+- Keep the app HTTP port accessible only to the proxy and your private administration network. Infrastructure ports remain private.
 
-**1. Add to `.env`:**
-```env
-DOMAIN=share.yourdomain.com
-ACME_EMAIL=admin@yourdomain.com
-```
+For an existing internet-facing nginx proxy, add these directives to its site; certificates stay in that proxy:
 
-**2. Start with the SSL override:**
-```bash
-docker compose -f docker-compose.yml -f docker-compose.ssl.yml up --build -d
-```
-
-The SSL override mounts `Caddyfile.tls`, which reads DOMAIN and ACME_EMAIL. Caddy fetches the certificate on first start. Ports 80 and 443 must be reachable from the internet (for the ACME challenge). The setup wizard shows this command with a copy button when you enable the SSL toggle.
-
----
-
-## Behind a Reverse Proxy
-
-If you already have a reverse proxy handling TLS, run HTTP mode and proxy to HTTP_PORT. Set `CADDY_TRUSTED_PROXIES` to that proxy's exact IP/CIDR, and forward Host, X-Forwarded-For and X-Forwarded-Proto. See [proxy configuration](docs/operations.md#http-tls-and-proxies).
-
-**Caddy example:**
-```
-share.yourdomain.com {
-    reverse_proxy localhost:80
-}
-```
-
-**nginx example:**
 ```nginx
-server {
-    listen 443 ssl;
-    server_name share.yourdomain.com;
-
-    ssl_certificate     /path/to/cert.pem;
-    ssl_certificate_key /path/to/key.pem;
-
-    location / {
-        proxy_pass         http://localhost:80;
-        proxy_set_header   Host $host;
-        proxy_set_header   X-Real-IP $remote_addr;
-        proxy_set_header   X-Forwarded-For $proxy_add_x_forwarded_for;
-        proxy_set_header   X-Forwarded-Proto $scheme;
-        client_max_body_size 10G;
-    }
+location / {
+    proxy_pass http://SERVER-IP:8088;
+    proxy_http_version 1.1;
+    proxy_set_header Host $http_host;
+    proxy_set_header X-Forwarded-For $remote_addr;
+    proxy_set_header X-Forwarded-Proto $scheme;
+    proxy_request_buffering off;
+    proxy_buffering off;
+    client_max_body_size 10G;
+    proxy_read_timeout 600s;
+    proxy_send_timeout 600s;
 }
 ```
 
-Set **Base URL** to `https://share.yourdomain.com` in the setup wizard or Admin → Settings → General.
+If another trusted proxy precedes nginx, configure that chain's client-IP handling in your existing proxy. Check login, Secure cookies, settings changes and client-IP limits through the actual public URL.
 
----
-
-## Configuration
-
-Application settings live in **Admin → Settings**. Infrastructure secrets and proxy settings live in `.env`. Enter the local `.setup/token` in the setup wizard; keep that file private. [Migration, backup/restore and setup credential rotation](docs/operations.md) are documented separately.
-
-### `.env` reference
-
-| Variable | Description |
-|---|---|
-| `HTTP_PORT` | Host port for HTTP-only mode (default: `80`) |
-| `DOMAIN` | Domain for auto-SSL mode (e.g. `share.example.com`) |
-| `ACME_EMAIL` | Let's Encrypt contact email (required with the SSL override) |
-| `HTTPS_PORT` | Host port for built-in TLS (default: `443`) |
-| `CADDY_TRUSTED_PROXIES` / `TRUST_PROXY` | Trusted upstream proxy addresses / Express proxy hops |
-| `POSTGRES_USER` / `POSTGRES_PASSWORD` / `POSTGRES_DB` | Database credentials |
-| `DATABASE_URL` | Full Postgres connection string |
-| `MINIO_ROOT_USER` / `MINIO_ROOT_PASSWORD` | MinIO root credentials |
-| `MINIO_ACCESS_KEY` / `MINIO_SECRET_KEY` | MinIO access credentials |
-| `REDIS_URL` | Redis connection URL |
-| `JWT_SECRET` | Random signing secret of at least 32 characters; generated by the helper |
-| `SETUP_TOKEN_FILE` | Private bootstrap token file; Docker uses `/app/.setup/token` |
-| `SMTP_ALLOWED_HOSTS` | Optional comma-separated allowlist of exact SMTP hosts |
-
-### Web UI Settings
-
-| Category | Options |
-|---|---|
-| **General** | App name, base URL, description, max files per transfer |
-| **Storage** | Max file size, max transfer size, retention days (anonymous / registered) |
-| **Email** | SMTP host/port/auth, SSL toggle, from address, test button |
-| **Security** | Open/closed registration, require email verification |
-| **Appearance** | Primary color (presets + custom picker), logo upload, favicon upload |
-| **Privacy** | IP anonymization, log retention period, privacy policy text, imprint text |
-
----
-
-## End-to-End Encryption
-
-When the sender enables **Ende-zu-Ende-Verschlüsselung** before uploading:
-
-- A 256-bit AES-GCM key is generated in the browser
-- Each 8 MiB chunk is encrypted client-side and authenticated with its file, position and length
-- New transfers include an authenticated encrypted manifest to detect altered or missing file metadata; existing version 1 transfers remain readable
-- The full download URL carries the key, version and context in its fragment: `https://…/d/abc123#key=<base64url>&v=2&ctx=<context>`
-- The server and MinIO never see the plaintext or the key
-- The receiver's browser decrypts the file locally before saving it
-
-Keep the complete link private. The server cannot recover a lost key. Encrypted uploads cannot be virus-scanned; plaintext uploads require a clean scan when scanning is enabled.
-
----
-
-## Architecture
-
-**HTTP-only mode:**
-```
-Browser
-  │
-  ▼
-Caddy :80
-  │
-  ▼
-nginx :80
-  ├── /        → frontend (static, built into the nginx image)
-  └── /api/*   → backend :3000
-                     ├── PostgreSQL (users, transfers, settings, durable jobs)
-                     ├── MinIO (file objects — internal only)
-                     ├── ClamAV (plaintext virus scans)
-                     └── Redis (shared rate limits)
-```
-
-**Auto-SSL mode (`docker-compose.ssl.yml`):**
-```
-Browser
-  │
-  ▼
-Caddy :443 (Let's Encrypt TLS)
-  │
-  ▼
-nginx :80  →  backend :3000  →  MinIO / PostgreSQL / Redis
-```
-
-File uploads stream directly from the browser through the backend to MinIO via [Busboy](https://github.com/mscdex/busboy) — no temp files on disk. Downloads stream back the same way — no presigned MinIO URLs are ever exposed to the browser.
-
----
-
-## Admin Panel
-
-The admin panel lives at `/admin` (requires `ADMIN` role).
-
-- **Dashboard** — active transfers, downloads today, storage used, 7-day download chart, recent transfers
-- **Files** — paginated transfer list with search and status filter, bulk-delete
-- **Users** — paginated user list, role management, delete users
-- **Settings** — 6 categories, all persisted to the database
-
-**Privacy:** Server administrators can access the database and storage. Client encryption protects contents and names while its key stays in the share-link fragment; sizes, MIME types, dates, owner and notification email remain visible. Unprotected plaintext transfers are accessible through their short IDs. See [privacy and operations](docs/operations.md#privacy-and-outgoing-services).
-
----
-
-## Development
-
-Use Node **24** and the lockfiles. Start the infrastructure and complete first setup through Compose before switching to a native backend. For a native backend, supply DATABASE_URL, REDIS_URL, MINIO_ENDPOINT/PORT and CLAMAV_HOST/PORT for local test services via the shell or ignored `backend/.env.local`; do not overwrite an existing deployment `.env`. The dev command loads the root `.env` plus these optional local overrides. Use the isolated fixtures in [testing](docs/testing.md) instead of production data.
-
-```bash
-cd backend
-npm ci
-npx prisma generate
-# With the local DATABASE_URL exported:
-npx prisma migrate deploy
-npm run dev
-
-# Frontend (separate terminal, from the checkout)
-cd frontend
-npm ci
-npm run dev
-```
-
-Vite proxies `/api` to `http://localhost:3000`; API_PROXY_TARGET can override the development proxy. Native first setup generates its token in `backend/.setup-token` unless SETUP_TOKEN_FILE is supplied. Credential rotation and Caddy TLS configuration are intended for the documented Compose/Unraid deployment; use that workflow to initialize the development database first.
-
----
+Use HTTPS for normal operation. Browser encryption and clipboard access require a secure context; HTTP on a LAN IP does not provide it. Private HTTP can be used for initial setup, but the public Base URL must match your HTTPS address.
 
 ## Unraid
 
-Choose either the **complete Docker Compose stack below** or the **DockerMan templates** ([Backend](unraid/templates/sharedrive-backend.xml) and [Web](unraid/templates/sharedrive-web.xml)) with the separate [infrastructure Compose file](unraid/compose.infrastructure.yml). Both use locally built images; no published ShareDrive registry image is assumed. Requirements: Unraid with Docker enabled, Docker Compose v2, Git, curl and OpenSSL; allow at least 3 GB RAM for ClamAV plus the other services. The DockerMan option imports user templates, not a Community Applications listing.
+Choose either the complete Compose stack or one DockerMan app template with infrastructure Compose. Both use two locally built images: the combined app and MinIO. Do not run both methods against the same appdata.
 
-**Use one deployment method per installation.** Before switching methods with existing appdata, back up the installation and stop its current application and infrastructure containers. Do not run both stacks against the same database or storage directories.
+### Complete Stack
 
-### Docker Compose für Unraid – direkt kopieren
-
-Diese Variante startet **alle sieben Dienste** gemeinsam: Backend, Web/nginx, PostgreSQL, Redis, MinIO, ClamAV und Caddy. Die XML-Templates und `compose.infrastructure.yml` werden dafür nicht benötigt. Alle dauerhaften Daten liegen unter `/mnt/user/appdata/sharedrive/`; Compose erstellt das gemeinsame Docker-Netzwerk automatisch.
-
-**1. Einmal vorbereiten:** Im Unraid-Terminal ausführen. Bei vorhandenem Checkout direkt in dessen Verzeichnis wechseln und den Clone-Befehl überspringen.
+In the Unraid terminal:
 
 ```bash
 mkdir -p /mnt/user/appdata/sharedrive
 git clone --branch master https://github.com/gottschalkfelix4-source/sharedrive.git /mnt/user/appdata/sharedrive/source
 cd /mnt/user/appdata/sharedrive/source
 bash unraid/prepare-config.sh --unraid
-docker build -t sharedrive-backend:unraid ./backend
-docker build -t sharedrive-web:unraid -f nginx/Dockerfile .
+docker build -t sharedrive:unraid -f backend/Dockerfile .
 docker build -t sharedrive-minio:unraid -f unraid/Dockerfile.minio .
-cp unraid/compose.yml /mnt/user/appdata/sharedrive/compose.yml
 ```
 
-Wenn du bereits das Image-Archiv mit den drei `:unraid`-Images hast, ersetzt `docker load -i /pfad/sharedrive-images.tar.gz` die drei Build-Befehle. Das Konfigurationsskript erstellt zufällige Zugangsdaten, `.setup/token` und die beschreibbare `Caddyfile`; vorhandene Dateien bleiben erhalten. Die Images müssen vor dem Start lokal vorhanden sein.
-
-**2. Compose kopieren:** Die Datei [unraid/compose.yml](unraid/compose.yml) wurde oben bereits kopiert. Alternativ diesen vollständigen Block als `/mnt/user/appdata/sharedrive/compose.yml` speichern oder in Unraids **Compose Manager** als neuen Stack einfügen:
-
-```yaml
-# Complete Unraid stack. Prepare appdata and build/load the three local images first.
-# Alternative to the DockerMan templates plus compose.infrastructure.yml.
-name: sharedrive-unraid-stack
-
-services:
-  caddy:
-    image: caddy:2.10.2-alpine@sha256:4c6e91c6ed0e2fa03efd5b44747b625fec79bc9cd06ac5235a779726618e530d
-    environment:
-      CADDY_TRUSTED_PROXIES: ${CADDY_TRUSTED_PROXIES:-127.0.0.1/32}
-    ports:
-      - "${HTTP_PORT:-8088}:80"
-      - "${HTTPS_PORT:-8443}:443"
-      - "${HTTPS_PORT:-8443}:443/udp"
-    volumes:
-      - ${SHAREDRIVE_APPDATA:-/mnt/user/appdata/sharedrive}/Caddyfile:/etc/caddy/Caddyfile
-      - ${SHAREDRIVE_APPDATA:-/mnt/user/appdata/sharedrive}/caddy/data:/data
-      - ${SHAREDRIVE_APPDATA:-/mnt/user/appdata/sharedrive}/caddy/config:/config
-    depends_on:
-      nginx:
-        condition: service_healthy
-    restart: unless-stopped
-    networks: [sharedrive]
-
-  nginx:
-    image: sharedrive-web:unraid
-    pull_policy: never
-    depends_on:
-      backend:
-        condition: service_healthy
-    restart: unless-stopped
-    networks: [sharedrive]
-
-  backend:
-    image: sharedrive-backend:unraid
-    pull_policy: never
-    env_file: ${SHAREDRIVE_APPDATA:-/mnt/user/appdata/sharedrive}/.env
-    environment:
-      NODE_ENV: production
-      SETUP_TOKEN_FILE: /app/.setup/token
-    mem_limit: 1g
-    cpus: 2
-    volumes:
-      - ${SHAREDRIVE_APPDATA:-/mnt/user/appdata/sharedrive}/.env:/app/.env
-      - ${SHAREDRIVE_APPDATA:-/mnt/user/appdata/sharedrive}/Caddyfile:/app/Caddyfile
-      - ${SHAREDRIVE_APPDATA:-/mnt/user/appdata/sharedrive}/.setup:/app/.setup
-    depends_on:
-      postgres:
-        condition: service_healthy
-      redis:
-        condition: service_healthy
-      minio:
-        condition: service_healthy
-      clamav:
-        condition: service_healthy
-    restart: unless-stopped
-    networks: [sharedrive]
-
-  postgres:
-    image: postgres:16.10-alpine@sha256:029660641a0cfc575b14f336ba448fb8a75fd595d42e1fa316b9fb4378742297
-    env_file: ${SHAREDRIVE_APPDATA:-/mnt/user/appdata/sharedrive}/.env
-    volumes:
-      - ${SHAREDRIVE_APPDATA:-/mnt/user/appdata/sharedrive}/postgres:/var/lib/postgresql/data
-    healthcheck:
-      test: [CMD-SHELL, 'pg_isready -U "$${POSTGRES_USER}" -d "$${POSTGRES_DB}"']
-      interval: 5s
-      timeout: 5s
-      retries: 20
-    restart: unless-stopped
-    networks: [sharedrive]
-
-  redis:
-    image: redis:7.4.5-alpine@sha256:bb186d083732f669da90be8b0f975a37812b15e913465bb14d845db72a4e3e08
-    command: [redis-server, --appendonly, 'yes']
-    volumes:
-      - ${SHAREDRIVE_APPDATA:-/mnt/user/appdata/sharedrive}/redis:/data
-    healthcheck:
-      test: [CMD, redis-cli, ping]
-      interval: 5s
-      timeout: 5s
-      retries: 20
-    restart: unless-stopped
-    networks: [sharedrive]
-
-  minio:
-    image: sharedrive-minio:unraid
-    pull_policy: never
-    command: server /data --console-address ":9001"
-    env_file: ${SHAREDRIVE_APPDATA:-/mnt/user/appdata/sharedrive}/.env
-    volumes:
-      - ${SHAREDRIVE_APPDATA:-/mnt/user/appdata/sharedrive}/minio:/data
-    healthcheck:
-      test: [CMD, curl, -fsS, http://localhost:9000/minio/health/ready]
-      interval: 10s
-      timeout: 5s
-      retries: 30
-    restart: unless-stopped
-    networks: [sharedrive]
-
-  clamav:
-    image: clamav/clamav:1.4.3@sha256:75fb5fd95fcbe1d7e6d240c369c1572b686ee2c95949d1042b5148de8eddebb4
-    environment:
-      CLAMD_CONF_StreamMaxLength: 6144M
-      CLAMD_CONF_MaxFileSize: 6144M
-      CLAMD_CONF_MaxScanSize: 6144M
-      CLAMD_CONF_AlertExceedsMax: "yes"
-      CLAMD_CONF_TCPSocket: 3310
-      CLAMD_CONF_TCPAddr: "0.0.0.0"
-    mem_limit: 3g
-    cpus: 2
-    volumes:
-      - ${SHAREDRIVE_APPDATA:-/mnt/user/appdata/sharedrive}/clamav:/var/lib/clamav
-    healthcheck:
-      test: [CMD, clamdscan, --ping, '1']
-      interval: 30s
-      timeout: 10s
-      start_period: 5m
-      retries: 10
-    restart: unless-stopped
-    networks: [sharedrive]
-
-networks:
-  sharedrive:
-    driver: bridge
-```
-
-**3. Starten – ein Befehl:**
+Configure `/mnt/user/appdata/sharedrive/.env`, particularly `HTTP_PORT` and `TRUST_PROXY`, then start:
 
 ```bash
-docker compose --env-file /mnt/user/appdata/sharedrive/.env -f /mnt/user/appdata/sharedrive/compose.yml up -d --wait --wait-timeout 900
+docker compose --env-file /mnt/user/appdata/sharedrive/.env -f unraid/compose.yml up -d --wait --wait-timeout 900
 ```
 
-Im Compose Manager kannst du stattdessen den vorbereiteten Stack mit **Compose Up** starten. Der erste ClamAV-Signaturdownload kann mehrere Minuten dauern. Nur Caddy veröffentlicht Ports: **8088 HTTP**, **8443 HTTPS** (TCP/UDP). Öffne danach `http://UNRAID-IP:8088` und gib den lokal aus `/mnt/user/appdata/sharedrive/.setup/token` gelesenen Setup-Token ein.
+Keep [unraid/compose.yml](unraid/compose.yml) in the checkout: its build contexts resolve relative to that file. `up --build` can build both local images directly instead of the manual builds. For Compose Manager, use the checkout as the project directory or configure absolute build contexts. Persistent data stays under `/mnt/user/appdata/sharedrive/`. Only the app exposes **8088 HTTP**. Point your reverse proxy at `http://UNRAID-IP:8088` and complete setup with your public HTTPS URL and the token read locally from `/mnt/user/appdata/sharedrive/.setup/token`.
 
-Nach **Zugangsdaten speichern & anwenden** im Assistenten MinIO und Backend mit dem folgenden Befehl neu erstellen, dann **Bereitschaft prüfen** und das Admin-Konto anlegen. Ein einfacher Neustart lädt die geänderten Zugangsdaten nicht:
+For a custom appdata path, export `SHAREDRIVE_APPDATA` before preparation and every Compose command, and adjust file paths. Compose interpolation reads values from `--env-file`; configure Compose Manager project variables as needed. A service's `env_file` alone does not provide YAML interpolation values.
 
-```bash
-docker compose --env-file /mnt/user/appdata/sharedrive/.env -f /mnt/user/appdata/sharedrive/compose.yml up -d --force-recreate --wait --wait-timeout 900 minio backend
-```
+### DockerMan App Template
 
-Für den normalen Betrieb HTTPS verwenden: entweder über deinen vorhandenen Reverse Proxy auf Port 8088 oder über Caddy-TLS im Assistenten mit öffentlichem Port 80 → 8088 und 443 → 8443. Browser-Verschlüsselung und Zwischenablage benötigen einen sicheren Browserkontext.
-
-**Eigene Pfade/Ports:** Bei einem anderen Appdata-Pfad `SHAREDRIVE_APPDATA` vor der Vorbereitung und jedem Compose-Befehl exportieren und die Dateipfade in den Befehlen anpassen. Die CLI liest `HTTP_PORT`, `HTTPS_PORT` und `CADDY_TRUSTED_PROXIES` mit `--env-file` aus der Appdata-`.env`. Im Compose Manager diese Werte bei Bedarf zusätzlich als Projektvariablen hinterlegen; das YAML-`env_file` allein setzt nur die Container-Umgebung. Ohne Anpassungen gelten die oben angegebenen Unraid-Standardwerte.
-
-**Updates und Backups:** Vor einem Update ein Backup erstellen, Backend stoppen, den Checkout mit `git pull --ff-only` aktualisieren und die drei Images mit den Build-Befehlen oben neu bauen. Anschließend den Startbefehl um `--force-recreate` ergänzen, damit Compose die neuen Images verwendet. Die kopierte YAML-Datei bei Änderungen mit der Version im Checkout abgleichen. Für den vollständigen Compose-Stack verwendet der Backup-Helfer diese Variante ohne `--unraid` (das Flag gehört zum DockerMan-Modus):
+After the same preparation and two image builds:
 
 ```bash
 cd /mnt/user/appdata/sharedrive/source
-COMPOSE_FILE=/mnt/user/appdata/sharedrive/compose.yml SHAREDRIVE_CONFIG_DIR=/mnt/user/appdata/sharedrive bash scripts/backup.sh /mnt/user/backups/sharedrive-YYYY-MM-DD
-```
-
-Ein neues Backup-Verzeichnis mit dem aktuellen Datum wählen. Für bestehende ältere Datenbanken vor dem Upgrade die [Migrations- und Wiederherstellungshinweise](docs/operations.md) beachten.
-
-### Add the templates with one command
-
-Run this **in the Unraid terminal**:
-
-```bash
-bash -c 'set -euo pipefail; t=$(mktemp); trap '\''rm -f -- "$t"'\'' EXIT; curl -fsSL --proto "=https" --proto-redir "=https" https://raw.githubusercontent.com/gottschalkfelix4-source/sharedrive/master/unraid/install-templates.sh -o "$t"; bash "$t"'
-```
-
-The command downloads the importer and installs both XML files in `/boot/config/plugins/dockerMan/templates-user/`. It preserves changed existing templates in backup files and leaves identical templates untouched. It does **not** install images or start containers. Then select **Docker → Add Container → Template → ShareDrive-Backend / ShareDrive-Web**. If working from an unpublished checkout, use `bash unraid/install-templates.sh` from that checkout instead.
-
-### Prepare images and persistent storage
-
-Clone once, or use your existing checkout:
-
-```bash
-mkdir -p /mnt/user/appdata/sharedrive
-git clone --branch master https://github.com/gottschalkfelix4-source/sharedrive.git /mnt/user/appdata/sharedrive/source
-cd /mnt/user/appdata/sharedrive/source
-bash unraid/prepare-config.sh
+bash unraid/install-templates.sh
 docker network inspect sharedrive >/dev/null 2>&1 || docker network create sharedrive
-docker build -t sharedrive-backend:unraid ./backend
-docker build -t sharedrive-web:unraid -f nginx/Dockerfile .
-docker build -t sharedrive-minio:unraid -f unraid/Dockerfile.minio .
-docker compose --env-file /mnt/user/appdata/sharedrive/.env -f unraid/compose.infrastructure.yml up -d
+docker compose --env-file /mnt/user/appdata/sharedrive/.env -f unraid/compose.infrastructure.yml up -d --wait --wait-timeout 900
 ```
 
-The configuration helper creates random local database, MinIO and JWT secrets with `.env` permissions `0600`, and a writable runtime copy of `Caddyfile`. Repeating it preserves existing configuration. Persistent service data uses bind mounts under `/mnt/user/appdata/sharedrive/`, rather than the Docker image filesystem. Choose an appdata pool with enough space for uploads, PostgreSQL and ClamAV signatures. Keep the source checkout and local images for rebuilds.
+Select **Docker -> Add Container -> Template -> ShareDrive-Backend** and apply the template. This single container serves web interface and API. Keep its `sharedrive` network, token mount and `--env-file` path. Set the host port in DockerMan separately from `.env` `HTTP_PORT`. Enable autostart with enough time for infrastructure to become healthy. Local images must exist; disable registry auto-updates for the app image.
 
-**MinIO:** the included Dockerfile builds the official source-only release from a fixed Git commit, with Go module checksum validation. It needs GitHub, the Go proxy/checksum service and artifact hosts such as `storage.googleapis.com`. MinIO is separately licensed under AGPL-3.0. If using `MINIO_IMAGE` instead, supply an accessible trusted image with `curl` for the configured healthcheck; skip the MinIO build above and use `up -d --no-build`. The source build and real storage integration have been verified; see the [review](docs/project-review.de.md).
+The importer preserves changed templates in backup files. It does not build images or start containers. No registry image or Community Applications listing is assumed. An archive with the app and MinIO images can be loaded using `docker load -i /path/to/sharedrive-images.tar.gz` instead of the two builds; it supplies no appdata or credentials.
 
-If you received a Docker image archive containing these three `:unraid` images, load it with `docker load -i /path/to/sharedrive-images.tar.gz` instead of running the three image-build commands. Prepare the configuration, Docker network and infrastructure as above; the archive supplies the images, not service data or credentials.
+For an older DockerMan installation, back up and stop its old Web and Backend containers before applying the combined Backend template. Reuse the same appdata and infrastructure project. See [upgrade instructions](docs/operations.md#upgrade-from-the-previous-proxy-stack).
 
-Only Caddy exposes host ports: HTTP **8088**, HTTPS **8443** (TCP/UDP). Database, Redis, MinIO, its console, ClamAV, backend and nginx remain on the `sharedrive` Docker network. Change `HTTP_PORT` / `HTTPS_PORT` in the appdata `.env` if those ports are occupied. Update the Web template's WebUI URL if HTTP_PORT changes.
+## Configuration
 
-### Apply templates and complete setup
+Application settings live in **Admin -> Settings**. Infrastructure configuration stays in your private `.env`. Never put credentials in Git or XML templates.
 
-1. Apply **ShareDrive-Backend**, then **ShareDrive-Web**. Keep network `sharedrive` and the aliases `backend` / `nginx`; the existing proxy configuration depends on them. Local images must already exist. Disable registry auto-updates for these two images.
-2. Read `/mnt/user/appdata/sharedrive/.setup/token` locally and enter it in the wizard. Open `http://UNRAID-IP:8088` on your LAN to complete setup. Keep the initial setup private until the admin account exists. The backend template reads credentials using `--env-file` and mounts that same file at `/app/.env` for the wizard.
-3. After the wizard's **Zugangsdaten speichern & anwenden** step, recreate MinIO and the backend **before proceeding to admin login**. The wizard saves the credentials, refreshes clients and requires container recreation. It will not finish admin creation until readiness is verified. Leave the wizard tab open while running:
+| Variable | Purpose |
+| --- | --- |
+| `HTTP_PORT` | Published app port, default `8088`; internal app port remains `3000` |
+| `TRUST_PROXY` | Trusted proxy IP/CIDR, comma-separated; default `loopback` |
+| `POSTGRES_USER`, `POSTGRES_PASSWORD`, `POSTGRES_DB`, `DATABASE_URL` | Database credentials and connection |
+| `MINIO_ROOT_USER`, `MINIO_ROOT_PASSWORD`, `MINIO_ACCESS_KEY`, `MINIO_SECRET_KEY` | Object storage credentials |
+| `MINIO_ENDPOINT`, `MINIO_PORT`, `MINIO_BUCKET`, `MINIO_USE_SSL` | Internal storage connection |
+| `REDIS_URL` | Internal Redis connection |
+| `CLAMAV_HOST`, `CLAMAV_PORT` | Internal scanner connection |
+| `JWT_SECRET` | Random signing secret generated by the helper |
+| `SETUP_TOKEN_FILE` | Private token path, `/app/.setup/token` in Docker |
+| `SMTP_ALLOWED_HOSTS` | Optional exact SMTP hostname allowlist |
 
-   ```bash
-   cd /mnt/user/appdata/sharedrive/source
-   docker compose --env-file /mnt/user/appdata/sharedrive/.env -f unraid/compose.infrastructure.yml up -d --force-recreate minio
-   ```
+Settings include public Base URL, upload limits, retention, registration, email verification, SMTP, appearance, virus scanning and privacy/legal text. Certificates, DNS and proxy configuration belong to your existing reverse proxy.
 
-   Then use Unraid **ShareDrive-Backend → Edit → Apply** to recreate the backend with the updated `--env-file`. `docker restart` alone reuses the old container environment and does not reload this file.
+## Encryption And Privacy
 
-4. Use **Bereitschaft prüfen** in the wizard after recreation, then create the admin account. With an existing reverse proxy, leave built-in SSL off, proxy to port 8088 and set the public HTTPS Base URL. For built-in Caddy TLS, forward public TCP 80 → 8088 and TCP 443 → 8443 (optionally UDP 443 → 8443), point DNS at your server and enable SSL in the wizard. The writable runtime `Caddyfile` is shared with Caddy; the Unraid workflow does not use `docker-compose.ssl.yml`.
-5. Enable Unraid autostart for Backend before Web, with enough delay for PostgreSQL and MinIO to become ready. Infrastructure uses `restart: unless-stopped`; start it again with the Compose command above if stopped manually. The backend exits if dependencies are unavailable and retries through its restart policy.
+Browser encryption uses AES-256-GCM in 8 MiB chunks. Version 2 authenticates chunk position, file identity and length plus an encrypted manifest. Existing version 1 transfers remain readable. The complete link carries the key in its fragment, such as `/d/abc123#key=...&v=2&ctx=...`; the server never receives that fragment. Keep the full link private. The server cannot recover lost keys.
 
-Use HTTPS for normal browser access: end-to-end encryption and clipboard APIs require a secure browser context when accessing a server by LAN IP or domain. Plain HTTP on port 8088 is suitable for the initial private setup, but does not provide those browser capabilities.
+Encrypted transfers cannot be virus-scanned. Plaintext uploads require a clean scan when scanning is enabled; scanner failures do not publish a clean transfer. Administrators can access unencrypted contents and metadata. Encryption hides contents and encrypted names while the key stays private; sizes, MIME types, dates, owners and notification email remain visible. IP masking and retention do not alone establish legal compliance.
 
-If you choose a different appdata path, export `SHAREDRIVE_APPDATA` for the helper and every Compose command, pass the matching `--env-file` path and adjust all backend template mounts and its Extra Parameters `--env-file`. Never place actual credentials in the XML templates.
+## Updates And Backups
 
-### Check readiness and update
+Back up before updates, stop application writes, update the checkout, rebuild the app image and recreate its container. Rebuild MinIO when its pinned source/image changes. For standard Compose:
 
 ```bash
-cd /mnt/user/appdata/sharedrive/source
-docker compose --env-file /mnt/user/appdata/sharedrive/.env -f unraid/compose.infrastructure.yml ps
-docker compose --env-file /mnt/user/appdata/sharedrive/.env -f unraid/compose.infrastructure.yml exec -T postgres sh -c 'psql -U "$POSTGRES_USER" -d "$POSTGRES_DB" -c "SELECT 1"'
-docker compose --env-file /mnt/user/appdata/sharedrive/.env -f unraid/compose.infrastructure.yml exec -T redis redis-cli ping
-docker compose --env-file /mnt/user/appdata/sharedrive/.env -f unraid/compose.infrastructure.yml exec -T clamav clamdscan --ping 1
-curl --fail http://UNRAID-IP:8088/api/health
-curl --fail http://UNRAID-IP:8088/api/ready
-curl --fail http://UNRAID-IP:8088/api/setup/status
+bash scripts/backup.sh /absolute/new/backup-directory
+docker compose stop backend
+git pull --ff-only
+docker compose up --build -d --remove-orphans --wait --wait-timeout 900
 ```
 
-If HTTPS was enabled, use the configured public HTTPS URL for HTTP checks. Wait for ClamAV's first signature download; `PONG` alone does not establish that signatures are current. Check its logs, then verify an upload/download with matching bytes, a password-protected transfer and an encrypted transfer. `/api/health` alone does not test those workflows.
+For complete Unraid Compose, use `--env-file /mnt/user/appdata/sharedrive/.env -f unraid/compose.yml`, rebuild the local images and use `--force-recreate`. Back up this mode with `bash scripts/backup.sh /mnt/user/backups/sharedrive-YYYY-MM-DD --unraid-compose`. The helper's `--unraid` flag is only for DockerMan with infrastructure Compose. In DockerMan use **Edit -> Apply** after rebuilding the app. A restart does not load new images or changed environment variables.
 
-Before updates, back up `.env`, `Caddyfile`, PostgreSQL (with `pg_dump`) and MinIO objects. Stop the two app containers, update the checkout with `git pull --ff-only`, rebuild both local images with the build commands above, then use Unraid **Edit → Apply** on Backend and Web to recreate them using the new images. A restart alone keeps the old image. The backend applies versioned migrations. Legacy installations created with `db push`, or recording the old initial migration name `init`, need the controlled [baseline procedure](docs/operations.md#database-upgrades) before the first upgrade. The backend runs as UID/GID 1000; existing configuration files must be writable by that UID. Use the [backup helper and restore guide](docs/operations.md#backup-and-restore). Recheck readiness after updates. Do not delete appdata or use `docker system prune -a` as an update procedure: it can remove locally built images required by these templates.
+Preserve the Compose project name and storage paths. **Do not use `down -v`, delete appdata or remove named volumes during upgrades.** Older `db push` installations may need the migration baseline before startup. [Operations](docs/operations.md) covers old-stack upgrades, credentials, backup/restore and legacy migrations.
 
-## Project review and improvement suggestions
+Check `/api/health` and `/api/ready`, scanner logs and actual uploads/downloads after deployment. Readiness checks PostgreSQL, Redis and object storage; it is not a virus-scan or full workflow test.
 
-The [German project review](docs/project-review.de.md) records findings, implemented improvements and verified checks. The approved upload/download, setup/authentication, migration, privacy, frontend and deployment improvements are implemented. **S3 provider mapping and external-storage migration were excluded**; do not switch providers while existing transfers still depend on the previous storage.
+## Development And Tests
 
-Regression checks: `npm test` and `npm run build` in each package; `npm run test:browser` in frontend after installing Playwright Chromium. Backend `test:database` and `test:integration` require isolated test services, documented in [testing](docs/testing.md). CI runs builds, database/concurrency tests, browser flows and a separate real-MinIO/ClamAV integration job.
+Use Node 24 and package lockfiles. Supply isolated local database, Redis, MinIO and ClamAV endpoints via the environment or ignored `backend/.env.local`; do not overwrite a deployment `.env`.
 
----
+```bash
+cd backend
+npm ci
+npx prisma generate
+npx prisma migrate deploy
+npm run dev
+```
+
+In another terminal:
+
+```bash
+cd frontend
+npm ci
+npm run dev
+```
+
+Vite proxies `/api` to `http://localhost:3000`; `API_PROXY_TARGET` overrides it. Native setup uses `backend/.setup-token` unless `SETUP_TOKEN_FILE` is supplied. Production images build the frontend and serve it with the API.
+
+Run `npm test` and `npm run build` in each package. Browser and database/storage integration tests use isolated fixtures in [testing](docs/testing.md). The [German project review](docs/project-review.de.md) preserves the previous review and its validation boundaries; its proxy architecture is superseded.
 
 ## License
 
-MIT — see [LICENSE](LICENSE).
+ShareDrive: [MIT](LICENSE). MinIO is built from the pinned official source in `unraid/Dockerfile.minio` and is separately licensed under AGPL-3.0. Its build needs GitHub, the Go module proxy/checksum service and artifact hosts; preserve TLS/checksum validation.

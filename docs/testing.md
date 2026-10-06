@@ -18,7 +18,15 @@ npm run test:browser
 instead of the Playwright download. Browser tests start their own Vite process on
 5176 and a download-fixture server on 39005. They mock JSON API responses and verify
 password retry, ticket scope, downloaded fixture bytes, encrypted link fragments,
-cancelled uploads and manifest integrity. They are not a full production deployment test.
+cancelled uploads and manifest integrity. Setup tests cover the single form, token
+header, completion when automatic login fails, and mobile layout. They are not a
+full production deployment test.
+
+Backend runtime tests verify frontend deep links, API and asset 404 responses,
+HTTP-compatible security headers, explicit proxy trust and HTTPS-origin CSRF.
+CI additionally builds the combined application image and checks its frontend,
+deep links and API over HTTP, plus all three Compose configurations and the
+configuration/template/backup helper tests.
 
 ## Database and API integration
 
@@ -67,12 +75,23 @@ or storage durability correctness; CI's separate storage job runs without it.
 
 ## Release checks
 
-Before rollout, validate both Compose configurations, Caddy configuration, Unraid XML
-and helper shell syntax. Test fresh migrations and the legacy baseline on disposable
+Before rollout, validate root Compose, complete Unraid Compose and infrastructure
+Compose, the single Unraid app XML and helper shell syntax. Confirm that only the
+app publishes an HTTP port and the combined image serves frontend routes and API.
+Test fresh migrations and the legacy baseline on disposable
 databases; confirm a final schema diff is empty and seeded data remains. Test backup /
 restore into a separate database and byte-compare stored objects. On the target Unraid
-server check readiness, TLS cookies, proxy client IPs and full upload/download flows.
-The importer one-liner downloads the published templates from `master`.
+server check readiness, Secure cookies, login/settings changes, proxy client IPs and
+full upload/download flows through the existing HTTPS proxy. Check encrypted upload
+and download in that browser secure context. The setup flow accepts only token,
+public URL and administrator details; no credential rotation or SSL step is required.
+Exercise an old-stack upgrade using preserved volumes and existing credentials.
+The importer downloads the published app template from `master`.
+
+`bash scripts/test-deployment.sh` checks configuration preparation, preservation of
+existing secrets, template import, private ports and backup service selection with
+temporary fixtures and mocked Docker calls. It does not replace a real container
+startup or backup/restore test.
 
 Production audits use `npm audit --omit=dev`; CI rejects high/critical production findings.
 Remaining moderate SDK findings and development-only advisories are recorded in the

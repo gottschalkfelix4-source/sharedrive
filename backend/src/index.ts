@@ -1,7 +1,6 @@
 import express from 'express'
-import helmet from 'helmet'
-import cors from 'cors'
 import cookieParser from 'cookie-parser'
+import { configureHttp, serveFrontend } from './lib/http'
 import { authRouter } from './routes/auth'
 import { chunkedUploadRouter } from './routes/chunkedUpload'
 import { transfersRouter } from './routes/transfers'
@@ -24,10 +23,7 @@ import { log } from './services/logger'
 import { config } from './config'
 import { prisma } from './lib/prisma'
 
-// Detects whether default/placeholder secrets from .env.example are still in use
-// once an admin account already exists (i.e. setup should have rotated them).
-// Doesn't block startup — the setup wizard itself needs the server running
-// with these very placeholders before it can replace them.
+// Existing installations may still contain placeholder credentials.
 async function warnIfInsecureDefaults(): Promise<void> {
   try {
     const adminCount = await prisma.user.count({ where: { role: 'ADMIN' } })
@@ -50,7 +46,7 @@ async function warnIfInsecureDefaults(): Promise<void> {
     }
 
     if (insecure.length > 0) {
-      const msg = `SECURITY WARNING: default/placeholder values still in use for: ${insecure.join(', ')}. Rotate them now (Setup-Assistent unter /setup oder manuell in .env + Neustart).`
+      const msg = `SECURITY WARNING: default/placeholder values still in use for: ${insecure.join(', ')}. Replace them in the deployment configuration and restart the affected services.`
       console.warn(msg)
       await log('warn', 'system', msg).catch(() => {})
     }
@@ -61,29 +57,7 @@ async function warnIfInsecureDefaults(): Promise<void> {
 
 export const app = express()
 
-app.set(
-  'trust proxy',
-  (process.env.TRUST_PROXY || 'loopback, linklocal, uniquelocal')
-    .split(',')
-    .map((v) => v.trim())
-)
-
-app.use(
-  helmet({
-    crossOriginResourcePolicy: { policy: 'cross-origin' },
-  })
-)
-// Frontend and API are always served same-origin through nginx/Caddy, so the
-// app itself never needs cross-origin access in production. `origin: true`
-// would reflect any requesting site back as an allowed, credentialed origin —
-// only keep that permissiveness for local dev (Vite proxy already makes dev
-// requests same-origin too, so this mainly guards against stray dev tooling).
-app.use(
-  cors({
-    origin: config.nodeEnv === 'production' ? false : true,
-    credentials: true,
-  })
-)
+configureHttp(app)
 app.use(express.json({ limit: '1mb' }))
 app.use(cookieParser())
 app.use(csrfProtection)
@@ -111,6 +85,7 @@ app.get('/api/ready', async (_req, res) => {
   }
 })
 
+serveFrontend(app)
 app.use(errorHandler)
 
 async function start() {

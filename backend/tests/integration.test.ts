@@ -105,7 +105,7 @@ after(async () => {
   await redisClient.quit()
 })
 
-test('bootstrap requires the local token, rejects domain injection and permits exactly one initial admin', async () => {
+test('bootstrap requires the local token, removes certificate/credential management and permits exactly one initial admin', async () => {
   const input = {
     email: 'admin@example.com',
     username: 'review-admin',
@@ -113,14 +113,38 @@ test('bootstrap requires the local token, rejects domain injection and permits e
   }
   assert.equal((await http().post('/api/setup').send(input)).status, 401)
   assert.equal(
+    (await http().post('/api/setup')
+      .set('x-setup-token', process.env.SETUP_TOKEN!)
+      .send({ ...input, baseUrl: 'https://share.example.com/subpath' })).status,
+    400
+  )
+  assert.equal(
     (
       await http()
         .post('/api/setup/ssl')
         .set('x-setup-token', process.env.SETUP_TOKEN!)
         .send({ domain: 'example.com\n:2019 { respond hacked }' })
     ).status,
-    400
+    404
   )
+  assert.equal(
+    (await http().post('/api/setup/credentials')
+      .set('x-setup-token', process.env.SETUP_TOKEN!)
+      .send({ dbPassword: 'unused' })).status,
+    404
+  )
+  await setting('setup.credentialsPending', 'previous-deployment-fingerprint')
+  const readiness = await http().get('/api/setup/readiness')
+    .set('x-setup-token', process.env.SETUP_TOKEN!)
+  assert.equal(readiness.status, 200)
+  assert.deepEqual(readiness.body, { ready: false, requiresRecreation: true })
+  assert.equal(
+    (await http().post('/api/setup')
+      .set('x-setup-token', process.env.SETUP_TOKEN!)
+      .send(input)).status,
+    409
+  )
+  await prisma.setting.delete({ where: { key: 'setup.credentialsPending' } })
   const responses = await Promise.all(
     [
       input,
@@ -467,6 +491,26 @@ test('login uses HttpOnly cookies and unsafe cookie-authenticated requests requi
     ).status,
     200
   )
+})
+
+test('authentication cookies use the forwarded scheme only from trusted proxies', async () => {
+  const previousTrust = app.get('trust proxy')
+  try {
+    app.set('trust proxy', 'loopback')
+    const trusted = await http().post('/api/auth/logout')
+      .set('x-forwarded-proto', 'https')
+    assert.equal(trusted.status, 200)
+    for (const cookie of trusted.headers['set-cookie'])
+      assert.match(cookie, /; Secure/)
+    app.set('trust proxy', '192.168.188.2')
+    const untrusted = await http().post('/api/auth/logout')
+      .set('x-forwarded-proto', 'https')
+    assert.equal(untrusted.status, 200)
+    for (const cookie of untrusted.headers['set-cookie'])
+      assert.doesNotMatch(cookie, /; Secure/)
+  } finally {
+    app.set('trust proxy', previousTrust)
+  }
 })
 test('2FA setup does not replace an active secret; version revocation also invalidates challenges', async () => {
   const secret = authenticator.generateSecret()
