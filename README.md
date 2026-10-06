@@ -249,7 +249,183 @@ Vite proxies `/api` to `http://localhost:3000`; API_PROXY_TARGET can override th
 
 ## Unraid
 
-ShareDrive provides two DockerMan user templates: [Backend](unraid/templates/sharedrive-backend.xml) and [Web](unraid/templates/sharedrive-web.xml). PostgreSQL, Redis, MinIO, ClamAV and Caddy run through the included [infrastructure Compose file](unraid/compose.infrastructure.yml). The templates use locally built images; no published ShareDrive registry image is assumed. Requirements: Unraid with Docker enabled, Docker Compose v2, Git, curl and OpenSSL. This is a DockerMan template import, not a Community Applications listing.
+Choose either the **complete Docker Compose stack below** or the **DockerMan templates** ([Backend](unraid/templates/sharedrive-backend.xml) and [Web](unraid/templates/sharedrive-web.xml)) with the separate [infrastructure Compose file](unraid/compose.infrastructure.yml). Both use locally built images; no published ShareDrive registry image is assumed. Requirements: Unraid with Docker enabled, Docker Compose v2, Git, curl and OpenSSL; allow at least 3 GB RAM for ClamAV plus the other services. The DockerMan option imports user templates, not a Community Applications listing.
+
+**Use one deployment method per installation.** Before switching methods with existing appdata, back up the installation and stop its current application and infrastructure containers. Do not run both stacks against the same database or storage directories.
+
+### Docker Compose für Unraid – direkt kopieren
+
+Diese Variante startet **alle sieben Dienste** gemeinsam: Backend, Web/nginx, PostgreSQL, Redis, MinIO, ClamAV und Caddy. Die XML-Templates und `compose.infrastructure.yml` werden dafür nicht benötigt. Alle dauerhaften Daten liegen unter `/mnt/user/appdata/sharedrive/`; Compose erstellt das gemeinsame Docker-Netzwerk automatisch.
+
+**1. Einmal vorbereiten:** Im Unraid-Terminal ausführen. Bei vorhandenem Checkout direkt in dessen Verzeichnis wechseln und den Clone-Befehl überspringen.
+
+```bash
+mkdir -p /mnt/user/appdata/sharedrive
+git clone --branch master https://github.com/gottschalkfelix4-source/sharedrive.git /mnt/user/appdata/sharedrive/source
+cd /mnt/user/appdata/sharedrive/source
+bash unraid/prepare-config.sh --unraid
+docker build -t sharedrive-backend:unraid ./backend
+docker build -t sharedrive-web:unraid -f nginx/Dockerfile .
+docker build -t sharedrive-minio:unraid -f unraid/Dockerfile.minio .
+cp unraid/compose.yml /mnt/user/appdata/sharedrive/compose.yml
+```
+
+Wenn du bereits das Image-Archiv mit den drei `:unraid`-Images hast, ersetzt `docker load -i /pfad/sharedrive-images.tar.gz` die drei Build-Befehle. Das Konfigurationsskript erstellt zufällige Zugangsdaten, `.setup/token` und die beschreibbare `Caddyfile`; vorhandene Dateien bleiben erhalten. Die Images müssen vor dem Start lokal vorhanden sein.
+
+**2. Compose kopieren:** Die Datei [unraid/compose.yml](unraid/compose.yml) wurde oben bereits kopiert. Alternativ diesen vollständigen Block als `/mnt/user/appdata/sharedrive/compose.yml` speichern oder in Unraids **Compose Manager** als neuen Stack einfügen:
+
+```yaml
+# Complete Unraid stack. Prepare appdata and build/load the three local images first.
+# Alternative to the DockerMan templates plus compose.infrastructure.yml.
+name: sharedrive-unraid-stack
+
+services:
+  caddy:
+    image: caddy:2.10.2-alpine@sha256:4c6e91c6ed0e2fa03efd5b44747b625fec79bc9cd06ac5235a779726618e530d
+    environment:
+      CADDY_TRUSTED_PROXIES: ${CADDY_TRUSTED_PROXIES:-127.0.0.1/32}
+    ports:
+      - "${HTTP_PORT:-8088}:80"
+      - "${HTTPS_PORT:-8443}:443"
+      - "${HTTPS_PORT:-8443}:443/udp"
+    volumes:
+      - ${SHAREDRIVE_APPDATA:-/mnt/user/appdata/sharedrive}/Caddyfile:/etc/caddy/Caddyfile
+      - ${SHAREDRIVE_APPDATA:-/mnt/user/appdata/sharedrive}/caddy/data:/data
+      - ${SHAREDRIVE_APPDATA:-/mnt/user/appdata/sharedrive}/caddy/config:/config
+    depends_on:
+      nginx:
+        condition: service_healthy
+    restart: unless-stopped
+    networks: [sharedrive]
+
+  nginx:
+    image: sharedrive-web:unraid
+    pull_policy: never
+    depends_on:
+      backend:
+        condition: service_healthy
+    restart: unless-stopped
+    networks: [sharedrive]
+
+  backend:
+    image: sharedrive-backend:unraid
+    pull_policy: never
+    env_file: ${SHAREDRIVE_APPDATA:-/mnt/user/appdata/sharedrive}/.env
+    environment:
+      NODE_ENV: production
+      SETUP_TOKEN_FILE: /app/.setup/token
+    mem_limit: 1g
+    cpus: 2
+    volumes:
+      - ${SHAREDRIVE_APPDATA:-/mnt/user/appdata/sharedrive}/.env:/app/.env
+      - ${SHAREDRIVE_APPDATA:-/mnt/user/appdata/sharedrive}/Caddyfile:/app/Caddyfile
+      - ${SHAREDRIVE_APPDATA:-/mnt/user/appdata/sharedrive}/.setup:/app/.setup
+    depends_on:
+      postgres:
+        condition: service_healthy
+      redis:
+        condition: service_healthy
+      minio:
+        condition: service_healthy
+      clamav:
+        condition: service_healthy
+    restart: unless-stopped
+    networks: [sharedrive]
+
+  postgres:
+    image: postgres:16.10-alpine@sha256:029660641a0cfc575b14f336ba448fb8a75fd595d42e1fa316b9fb4378742297
+    env_file: ${SHAREDRIVE_APPDATA:-/mnt/user/appdata/sharedrive}/.env
+    volumes:
+      - ${SHAREDRIVE_APPDATA:-/mnt/user/appdata/sharedrive}/postgres:/var/lib/postgresql/data
+    healthcheck:
+      test: [CMD-SHELL, 'pg_isready -U "$${POSTGRES_USER}" -d "$${POSTGRES_DB}"']
+      interval: 5s
+      timeout: 5s
+      retries: 20
+    restart: unless-stopped
+    networks: [sharedrive]
+
+  redis:
+    image: redis:7.4.5-alpine@sha256:bb186d083732f669da90be8b0f975a37812b15e913465bb14d845db72a4e3e08
+    command: [redis-server, --appendonly, 'yes']
+    volumes:
+      - ${SHAREDRIVE_APPDATA:-/mnt/user/appdata/sharedrive}/redis:/data
+    healthcheck:
+      test: [CMD, redis-cli, ping]
+      interval: 5s
+      timeout: 5s
+      retries: 20
+    restart: unless-stopped
+    networks: [sharedrive]
+
+  minio:
+    image: sharedrive-minio:unraid
+    pull_policy: never
+    command: server /data --console-address ":9001"
+    env_file: ${SHAREDRIVE_APPDATA:-/mnt/user/appdata/sharedrive}/.env
+    volumes:
+      - ${SHAREDRIVE_APPDATA:-/mnt/user/appdata/sharedrive}/minio:/data
+    healthcheck:
+      test: [CMD, curl, -fsS, http://localhost:9000/minio/health/ready]
+      interval: 10s
+      timeout: 5s
+      retries: 30
+    restart: unless-stopped
+    networks: [sharedrive]
+
+  clamav:
+    image: clamav/clamav:1.4.3@sha256:75fb5fd95fcbe1d7e6d240c369c1572b686ee2c95949d1042b5148de8eddebb4
+    environment:
+      CLAMD_CONF_StreamMaxLength: 6144M
+      CLAMD_CONF_MaxFileSize: 6144M
+      CLAMD_CONF_MaxScanSize: 6144M
+      CLAMD_CONF_AlertExceedsMax: "yes"
+      CLAMD_CONF_TCPSocket: 3310
+      CLAMD_CONF_TCPAddr: "0.0.0.0"
+    mem_limit: 3g
+    cpus: 2
+    volumes:
+      - ${SHAREDRIVE_APPDATA:-/mnt/user/appdata/sharedrive}/clamav:/var/lib/clamav
+    healthcheck:
+      test: [CMD, clamdscan, --ping, '1']
+      interval: 30s
+      timeout: 10s
+      start_period: 5m
+      retries: 10
+    restart: unless-stopped
+    networks: [sharedrive]
+
+networks:
+  sharedrive:
+    driver: bridge
+```
+
+**3. Starten – ein Befehl:**
+
+```bash
+docker compose --env-file /mnt/user/appdata/sharedrive/.env -f /mnt/user/appdata/sharedrive/compose.yml up -d --wait --wait-timeout 900
+```
+
+Im Compose Manager kannst du stattdessen den vorbereiteten Stack mit **Compose Up** starten. Der erste ClamAV-Signaturdownload kann mehrere Minuten dauern. Nur Caddy veröffentlicht Ports: **8088 HTTP**, **8443 HTTPS** (TCP/UDP). Öffne danach `http://UNRAID-IP:8088` und gib den lokal aus `/mnt/user/appdata/sharedrive/.setup/token` gelesenen Setup-Token ein.
+
+Nach **Zugangsdaten speichern & anwenden** im Assistenten MinIO und Backend mit dem folgenden Befehl neu erstellen, dann **Bereitschaft prüfen** und das Admin-Konto anlegen. Ein einfacher Neustart lädt die geänderten Zugangsdaten nicht:
+
+```bash
+docker compose --env-file /mnt/user/appdata/sharedrive/.env -f /mnt/user/appdata/sharedrive/compose.yml up -d --force-recreate --wait --wait-timeout 900 minio backend
+```
+
+Für den normalen Betrieb HTTPS verwenden: entweder über deinen vorhandenen Reverse Proxy auf Port 8088 oder über Caddy-TLS im Assistenten mit öffentlichem Port 80 → 8088 und 443 → 8443. Browser-Verschlüsselung und Zwischenablage benötigen einen sicheren Browserkontext.
+
+**Eigene Pfade/Ports:** Bei einem anderen Appdata-Pfad `SHAREDRIVE_APPDATA` vor der Vorbereitung und jedem Compose-Befehl exportieren und die Dateipfade in den Befehlen anpassen. Die CLI liest `HTTP_PORT`, `HTTPS_PORT` und `CADDY_TRUSTED_PROXIES` mit `--env-file` aus der Appdata-`.env`. Im Compose Manager diese Werte bei Bedarf zusätzlich als Projektvariablen hinterlegen; das YAML-`env_file` allein setzt nur die Container-Umgebung. Ohne Anpassungen gelten die oben angegebenen Unraid-Standardwerte.
+
+**Updates und Backups:** Vor einem Update ein Backup erstellen, Backend stoppen, den Checkout mit `git pull --ff-only` aktualisieren und die drei Images mit den Build-Befehlen oben neu bauen. Anschließend den Startbefehl um `--force-recreate` ergänzen, damit Compose die neuen Images verwendet. Die kopierte YAML-Datei bei Änderungen mit der Version im Checkout abgleichen. Für den vollständigen Compose-Stack verwendet der Backup-Helfer diese Variante ohne `--unraid` (das Flag gehört zum DockerMan-Modus):
+
+```bash
+cd /mnt/user/appdata/sharedrive/source
+COMPOSE_FILE=/mnt/user/appdata/sharedrive/compose.yml SHAREDRIVE_CONFIG_DIR=/mnt/user/appdata/sharedrive bash scripts/backup.sh /mnt/user/backups/sharedrive-YYYY-MM-DD
+```
+
+Ein neues Backup-Verzeichnis mit dem aktuellen Datum wählen. Für bestehende ältere Datenbanken vor dem Upgrade die [Migrations- und Wiederherstellungshinweise](docs/operations.md) beachten.
 
 ### Add the templates with one command
 
