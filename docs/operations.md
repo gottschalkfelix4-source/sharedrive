@@ -1,10 +1,82 @@
 # Deployment, migration and recovery
 
-Use Node 24 and the checked-in lockfiles. Backend images run as UID/GID **1000**.
+Use Node 24 and the checked-in lockfiles. Separate backend images run as UID/GID **1000**.
 The configuration helper sets ownership on files it creates when run as root;
 it preserves existing files. For an existing installation, give this UID read
 access to the configuration and read/write access to the private `.setup` directory.
 Keep `.env` and `.setup/token` at `0600`, `.setup` at `0700`.
+
+## Unraid all-in-one
+
+The independent image `ghcr.io/gottschalkfelix4-source/sharedrive-aio:latest`
+bundles the web application, PostgreSQL 16, Redis, MinIO and ClamAV. Install
+`unraid/templates/sharedrive-aio.xml` using the README one-liner, then select
+**Docker -> Add Container -> Template -> ShareDrive-AIO**. This creates one native
+DockerMan entry with WebUI, autostart and normal image updates; Compose and external
+infrastructure are not required. The template installer only imports XML. It stages
+downloads before installation and saves changed previous templates as hidden backup
+files in DockerMan's templates-user directory.
+
+Use bridge networking, one HTTP mapping (8088 to container port 3000 by default),
+and one new appdata bind (`/mnt/user/appdata/sharedrive-aio` to `/data`). Reserve at
+least 6 GB RAM; the supplied memory limit can be raised for larger workloads.
+ClamAV alone needs at least 3 GB, and initial database/scanner startup can take several
+minutes. The image bundles signatures, so the first startup does not require an online
+signature download; FreshClam refreshes signatures in the background when connectivity
+permits. Keep monitoring update failures and signature age: offline startup is not a
+promise that stale signatures offer current protection. All internal infrastructure
+listens only on loopback. Do not expose its
+ports, enable privileged mode, mount the Docker socket or supply the split-stack
+`.env`. Keep `--stop-timeout=120` so application requests and PostgreSQL can shut
+down cleanly before Docker forcibly stops the container.
+
+The supervisor starts as root only to initialize ownership and launch services under
+their own unprivileged users. The app runs as node UID 1000; the database, Redis and
+ClamAV use their distribution service users. There is no configurable global PUID/PGID:
+changing ownership recursively to Unraid UID 99 can break the database and private
+credentials. Preserve numeric ownership and permissions when copying backups.
+
+Persistent data is under `/data/{postgres,redis,minio,clamav,config,.setup}`.
+First initialization generates infrastructure credentials in root-owned private
+`/data/config/secrets.json` and the setup token in `/data/.setup/token`. Subsequent
+starts preserve those credentials; do not remove or replace the secrets file over
+existing data. Read the host appdata `.setup/token` locally to complete the normal
+setup wizard. The token and passwords are not printed to container logs.
+Configure `TRUST_PROXY` in DockerMan for the actual connecting reverse proxy and
+optionally set `SMTP_ALLOWED_HOSTS`. TLS remains in your existing external proxy.
+Use **Edit -> Apply** to load changes to template environment variables.
+
+### AIO updates and recovery
+
+Use Unraid's normal image update action only after a backup. Updates restart every
+bundled service together. Automatic migrations apply application schema changes;
+PostgreSQL remains on major 16. The runtime refuses incompatible `PG_VERSION`
+directories instead of trying a destructive major upgrade. A future database-major
+upgrade needs a separately tested dump/restore procedure; it is not automatic.
+An older image is not a rollback of an already changed database schema.
+
+Before a cold backup, let active uploads finish, stop **ShareDrive-AIO** in the
+Docker GUI and verify that the container is stopped. Back up the **entire** appdata
+directory, including hidden `.setup`, private configuration, database, object
+storage, Redis and scanner data. Store backups on another pool or machine and
+preserve numeric owners, permissions and symlinks. Do not copy live PostgreSQL files
+and call that a consistent backup. `scripts/backup.sh` targets split deployments
+and does **not** back up AIO. Back up your external proxy/certificates separately;
+keep encrypted links with their key fragments separately too.
+
+Test recovery into an empty, isolated AIO appdata path using the **same saved image
+digest** first. Restore the full stopped-state backup with numeric ownership and
+permissions intact, set that new path in an isolated AIO template with another HTTP
+port, and start it. Keep the production container stopped or isolated while testing;
+do not send notification emails or reuse the public domain accidentally. Check
+health/readiness, admin login, byte-identical downloads and a new scanned upload
+before relying on the recovery. Restart the original container once the cold backup
+has completed if no recovery is needed.
+
+This AIO data layout is not interchangeable with existing Compose/DockerMan appdata.
+Do not point the AIO template at existing split-stack directories or run both against
+one directory. No automatic cross-mode migration is provided. Existing deployments
+may continue using their current split images and templates.
 
 ## Database upgrades
 
@@ -50,6 +122,9 @@ a later client abort. Download tickets expire after 60 seconds and grant one fil
 or the ZIP scope; they never contain the password or encryption key.
 
 ## Credentials and setup
+
+The following preparation and credential procedures apply to **separate-container**
+deployments. AIO creates and preserves its own credentials as described above.
 
 Run `bash unraid/prepare-config.sh --compose` for the root Compose stack, or
 `bash unraid/prepare-config.sh --unraid` for Unraid, before first startup. It creates

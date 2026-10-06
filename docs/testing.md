@@ -82,6 +82,38 @@ or storage durability correctness; CI's separate storage job runs without it.
 
 ## Release checks
 
+For the independent Unraid AIO image, run `bash scripts/test-aio-template.sh`.
+It checks local and standalone downloaded imports, idempotency, customized-template
+backups, invalid/partial-download preservation, one port/path and absence of
+privileged mode, external infrastructure configuration or secrets in XML. It does
+not establish registry availability or runtime behavior. Standalone downloads must
+ignore a hostile adjacent `templates/` directory and fetch the official XML.
+
+To exercise the AIO runtime, use its focused unit checks and a built or published image:
+
+```bash
+docker run --rm --entrypoint python3 --mount "type=bind,src=$PWD/unraid/aio/test-runtime.py,dst=/opt/sharedrive/aio/test-runtime.py,readonly" sharedrive-aio:ci /opt/sharedrive/aio/test-runtime.py
+AIO_IMAGE=sharedrive-aio:ci bash scripts/test-aio.sh
+# After publication, verify the actual anonymously pulled image too:
+docker pull ghcr.io/gottschalkfelix4-source/sharedrive-aio:latest
+AIO_IMAGE=ghcr.io/gottschalkfelix4-source/sharedrive-aio:latest bash scripts/test-aio.sh
+```
+
+`test-aio.sh` creates a disposable volume and loopback-only HTTP mapping. It verifies
+fresh setup/admin login, a clean scanned upload/download, EICAR rejection, health,
+then restart and container recreation with preserved credentials, admin/database,
+MinIO objects and Redis state. It checks graceful shutdown and removes only its
+own disposable container/volume. AIO bundles initial scanner signatures; fresh
+signature updates run in the background and are not a prerequisite for offline startup.
+
+Parse the AIO XML as XML,
+then verify an anonymous registry pull and a real cold start of the published image
+with new disposable appdata. Check all bundled services, setup/login, actual scanned
+upload/download, restart persistence and graceful shutdown. Check the setup token
+and generated secrets remain unchanged after restart. Test incompatible PostgreSQL
+major rejection and stopped-state full-appdata backup/restore on disposable paths.
+Do not reuse production appdata for these checks.
+
 Before rollout, validate root Compose, complete Unraid Compose and infrastructure
 Compose, the single Unraid app XML and helper shell syntax. Confirm that only the
 app publishes an HTTP port and the combined image serves frontend routes and API.

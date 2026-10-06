@@ -11,8 +11,9 @@ jobs:
       - name: Validate first-run configuration and shell scripts
         run: |
           set -euo pipefail
-          bash -n start.sh unraid/prepare-config.sh unraid/install-templates.sh scripts/backup.sh
+          bash -n start.sh unraid/prepare-config.sh unraid/install-templates.sh unraid/install-aio-template.sh scripts/backup.sh scripts/test-aio.sh
           bash scripts/test-deployment.sh
+          bash scripts/test-aio-template.sh
           SHAREDRIVE_APPDATA="$PWD" bash unraid/prepare-config.sh --compose
           before=$(sha256sum .env .setup/token)
           SHAREDRIVE_APPDATA="$PWD" bash unraid/prepare-config.sh --compose
@@ -137,8 +138,24 @@ jobs:
       - name: Service logs on failure
         if: failure()
         run: docker logs sharedrive-ci-minio; docker logs sharedrive-ci-clamav
+  aio:
+    runs-on: ubuntu-24.04
+    timeout-minutes: 35
+    steps:
+      - uses: actions/checkout@v5
+      - name: Build all-in-one image from current application and storage
+        run: |
+          set -euo pipefail
+          docker build -t sharedrive:aio-fixture -f backend/Dockerfile .
+          docker build -t sharedrive-minio:aio-fixture -f unraid/Dockerfile.minio .
+          docker build -t sharedrive-aio:ci -f unraid/aio/Dockerfile --build-arg APP_IMAGE=sharedrive:aio-fixture --build-arg MINIO_IMAGE=sharedrive-minio:aio-fixture .
+      - name: Verify first setup, antivirus and persistence across recreation
+        run: |
+          set -euo pipefail
+          docker run --rm --entrypoint python3 --mount "type=bind,src=$PWD/unraid/aio,dst=/tests,readonly" sharedrive-aio:ci /tests/test-runtime.py
+          AIO_IMAGE=sharedrive-aio:ci bash scripts/test-aio.sh
   publish:
-    needs: [deployment, frontend, backend, storage-integration]
+    needs: [deployment, frontend, backend, storage-integration, aio]
     if: github.event_name == 'push' && github.ref == 'refs/heads/master' && github.repository == 'gottschalkfelix4-source/sharedrive'
     runs-on: ubuntu-24.04
     timeout-minutes: 45
@@ -151,6 +168,7 @@ jobs:
     outputs:
       app_digest: ${{ steps.app.outputs.digest }}
       minio_digest: ${{ steps.minio.outputs.digest }}
+      aio_digest: ${{ steps.aio.outputs.digest }}
     steps:
       - uses: actions/checkout@v5
         with:
@@ -191,10 +209,28 @@ jobs:
             org.opencontainers.image.revision=${{ github.sha }}
           cache-from: type=gha,scope=sharedrive-minio
           cache-to: type=gha,mode=max,scope=sharedrive-minio
+      - name: Publish Unraid all-in-one image
+        id: aio
+        uses: docker/build-push-action@v7
+        with:
+          context: .
+          file: unraid/aio/Dockerfile
+          platforms: linux/amd64
+          push: true
+          build-args: |
+            APP_IMAGE=ghcr.io/gottschalkfelix4-source/sharedrive@${{ steps.app.outputs.digest }}
+            MINIO_IMAGE=ghcr.io/gottschalkfelix4-source/sharedrive-minio@${{ steps.minio.outputs.digest }}
+          tags: ghcr.io/gottschalkfelix4-source/sharedrive-aio:sha-${{ github.sha }}
+          labels: |
+            org.opencontainers.image.source=https://github.com/gottschalkfelix4-source/sharedrive
+            org.opencontainers.image.revision=${{ github.sha }}
+          cache-from: type=gha,scope=sharedrive-aio
+          cache-to: type=gha,mode=max,scope=sharedrive-aio
       - name: Promote current master images to latest
         env:
           APP_DIGEST: ${{ steps.app.outputs.digest }}
           MINIO_DIGEST: ${{ steps.minio.outputs.digest }}
+          AIO_DIGEST: ${{ steps.aio.outputs.digest }}
         run: |
           set -euo pipefail
           current_sha=$(git ls-remote origin refs/heads/master | awk '{print $1}')
@@ -202,6 +238,7 @@ jobs:
           if [[ "$current_sha" == "$GITHUB_SHA" ]]; then
             docker buildx imagetools create --tag ghcr.io/gottschalkfelix4-source/sharedrive:latest "ghcr.io/gottschalkfelix4-source/sharedrive@$APP_DIGEST"
             docker buildx imagetools create --tag ghcr.io/gottschalkfelix4-source/sharedrive-minio:latest "ghcr.io/gottschalkfelix4-source/sharedrive-minio@$MINIO_DIGEST"
+            docker buildx imagetools create --tag ghcr.io/gottschalkfelix4-source/sharedrive-aio:latest "ghcr.io/gottschalkfelix4-source/sharedrive-aio@$AIO_DIGEST"
             printf 'Promoted current master images to latest.\n' >> "$GITHUB_STEP_SUMMARY"
           else
             printf 'Master advanced; retained commit images without replacing latest.\n' >> "$GITHUB_STEP_SUMMARY"
@@ -210,12 +247,42 @@ jobs:
         env:
           APP_DIGEST: ${{ steps.app.outputs.digest }}
           MINIO_DIGEST: ${{ steps.minio.outputs.digest }}
+          AIO_DIGEST: ${{ steps.aio.outputs.digest }}
         run: |
           set -euo pipefail
           test -n "$APP_DIGEST"
           test -n "$MINIO_DIGEST"
+          test -n "$AIO_DIGEST"
           printf 'Application: ghcr.io/gottschalkfelix4-source/sharedrive@%s\n' "$APP_DIGEST" | tee -a "$GITHUB_STEP_SUMMARY"
           printf 'MinIO: ghcr.io/gottschalkfelix4-source/sharedrive-minio@%s\n' "$MINIO_DIGEST" | tee -a "$GITHUB_STEP_SUMMARY"
+          printf 'Unraid AIO: ghcr.io/gottschalkfelix4-source/sharedrive-aio@%s\n' "$AIO_DIGEST" | tee -a "$GITHUB_STEP_SUMMARY"
+  published-aio:
+    needs: publish
+    runs-on: ubuntu-24.04
+    timeout-minutes: 20
+    permissions:
+      contents: read
+    env:
+      AIO_IMAGE: ghcr.io/gottschalkfelix4-source/sharedrive-aio@${{ needs.publish.outputs.aio_digest }}
+    steps:
+      - uses: actions/checkout@v5
+        with:
+          ref: ${{ github.sha }}
+      - name: Pull all-in-one image without registry authentication
+        run: |
+          set -euo pipefail
+          export DOCKER_CONFIG="$RUNNER_TEMP/sharedrive-aio-anonymous"
+          printf 'DOCKER_CONFIG=%s\n' "$DOCKER_CONFIG" >> "$GITHUB_ENV"
+          mkdir -p "$DOCKER_CONFIG"
+          printf '{}\n' > "$DOCKER_CONFIG/config.json"
+          pulled=false
+          for ((attempt=0; attempt<30; attempt++)); do
+            if docker pull "$AIO_IMAGE"; then pulled=true; break; fi
+            sleep 10
+          done
+          test "$pulled" = true
+      - name: Verify published AIO image and persistent data
+        run: bash scripts/test-aio.sh
   published-deployment:
     needs: publish
     runs-on: ubuntu-24.04

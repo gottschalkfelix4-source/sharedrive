@@ -1,0 +1,22 @@
+<?xml version="1.0" encoding="utf-8"?>
+<Container version="2">
+  <Name>ShareDrive-AIO</Name>
+  <Repository>ghcr.io/gottschalkfelix4-source/sharedrive-aio:latest</Repository>
+  <Registry>https://github.com/gottschalkfelix4-source/sharedrive/pkgs/container/sharedrive-aio</Registry>
+  <Network>bridge</Network>
+  <MyIP/>
+  <Shell>bash</Shell>
+  <Privileged>false</Privileged>
+  <Support>https://github.com/gottschalkfelix4-source/sharedrive/issues</Support>
+  <Project>https://github.com/gottschalkfelix4-source/sharedrive</Project>
+  <Overview>Standalone ShareDrive with web application, PostgreSQL 16, Redis, MinIO and ClamAV in one container. Your existing reverse proxy provides HTTPS and certificates. All persistent data and generated secrets are stored in /data; no Compose stack or external database is required. Allow at least 6 GB RAM and several minutes for first initialization. Bundled ClamAV signatures permit startup without a signature download; updates run in the background. Read the setup token locally from the appdata .setup/token file. Use a new appdata directory: this is not a migration from the separate-container deployment. Stop the container and back up all appdata before updates. Do not manually change database majors or overwrite generated secrets. Internal services run under their own unprivileged users; startup supervision runs as root without privileged mode.</Overview>
+  <Category>Network:Other Productivity:</Category>
+  <WebUI>http://[IP]:[PORT:3000]/</WebUI>
+  <TemplateURL>https://raw.githubusercontent.com/gottschalkfelix4-source/sharedrive/master/unraid/templates/sharedrive-aio.xml</TemplateURL>
+  <ExtraParams>--restart=unless-stopped --stop-timeout=120 --memory=6g</ExtraParams>
+  <PostArgs/>
+  <Config Name="HTTP port" Target="3000" Default="8088" Mode="tcp" Description="Forward your existing HTTPS reverse proxy to this HTTP port. Choose another host port if the existing ShareDrive stack already uses 8088." Type="Port" Display="always" Required="true" Mask="false">8088</Config>
+  <Config Name="Appdata" Target="/data" Default="/mnt/user/appdata/sharedrive-aio" Mode="rw" Description="Entire persistent AIO installation, including database, objects, signatures and private secrets. Use a new directory, not existing Compose appdata. Back up while stopped." Type="Path" Display="always" Required="true" Mask="false">/mnt/user/appdata/sharedrive-aio</Config>
+  <Config Name="Trusted reverse proxy" Target="TRUST_PROXY" Default="loopback" Mode="" Description="Actual connecting proxy IP or CIDR as seen by the app, comma-separated. loopback does not automatically trust your LAN or Docker network. Avoid trusting all clients." Type="Variable" Display="always" Required="true" Mask="false">loopback</Config>
+  <Config Name="SMTP host allowlist" Target="SMTP_ALLOWED_HOSTS" Default="" Mode="" Description="Optional comma-separated list of exact SMTP hostnames. Leave empty when no hostname allowlist is needed." Type="Variable" Display="advanced" Required="false" Mask="false"/>
+</Container>

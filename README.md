@@ -2,7 +2,7 @@
 
 Self-hosted file sharing with anonymous transfers, registered accounts, optional browser encryption and an admin panel.
 
-ShareDrive serves the web interface and API from **one application container**. Your existing reverse proxy handles HTTPS and certificates. No additional proxy or certificate manager is needed.
+ShareDrive serves the web interface and API from **one application container**. Unraid also has a separate **all-in-one image** containing the application and all infrastructure. Your existing reverse proxy handles HTTPS and certificates. No additional proxy or certificate manager is needed.
 
 ## Deployment
 
@@ -18,12 +18,13 @@ Browser -- HTTPS --> Your reverse proxy -- HTTP :8088 --> ShareDrive :3000
 
 PostgreSQL stores users, transfers, settings and durable upload/scan/deletion jobs. MinIO stores objects, Redis provides shared rate limits and ClamAV scans plaintext uploads. Only ShareDrive publishes a host port. Files stream through the app; browsers never access MinIO directly.
 
-Requirements: Docker, Docker Compose v2, Git, Bash and OpenSSL. Allow at least 3 GB RAM for ClamAV in addition to the application, database and storage. Production uses ready-to-pull images; no local image build or Node installation is required.
+For the separate-container deployment: Docker, Docker Compose v2, Git, Bash and OpenSSL. Allow at least 3 GB RAM for ClamAV in addition to the application, database and storage. The Unraid AIO alternative below needs only DockerMan, Bash and curl, with at least 6 GB RAM available. Production uses ready-to-pull images; no local image build or Node installation is required.
 
 | Published Image | Contents |
 | --- | --- |
 | `ghcr.io/gottschalkfelix4-source/sharedrive:latest` | Web interface and API |
 | `ghcr.io/gottschalkfelix4-source/sharedrive-minio:latest` | MinIO built from the repository's pinned official source |
+| `ghcr.io/gottschalkfelix4-source/sharedrive-aio:latest` | Standalone Unraid app, PostgreSQL 16, Redis, MinIO and ClamAV |
 
 Published images target `linux/amd64`, including typical Unraid servers.
 
@@ -54,7 +55,7 @@ Use your proxy's existing certificate configuration. Route the entire site, incl
 
 - Preserve the public `Host` header, including a nonstandard public port when used.
 - Set `X-Forwarded-Proto` to the public scheme and overwrite `X-Forwarded-For` with the real client address. Do not pass unchecked client forwarding headers through.
-- Set `TRUST_PROXY` in `.env` to the **actual connecting proxy IP or CIDR**, as seen by the application, then recreate the app. The default `loopback` does not automatically trust your LAN or Docker network. Avoid broad private ranges or trusting all clients.
+- Set `TRUST_PROXY` in `.env` (or **Trusted reverse proxy** in the AIO DockerMan template) to the **actual connecting proxy IP or CIDR**, as seen by the application, then recreate the app. The default `loopback` does not automatically trust your LAN or Docker network. Avoid broad private ranges or trusting all clients.
 - Allow request bodies large enough for your configured upload limits, increase upload/read timeouts and disable request buffering where supported.
 - Keep the app HTTP port accessible only to the proxy and your private administration network. Infrastructure ports remain private.
 
@@ -81,7 +82,25 @@ Use HTTPS for normal operation. Browser encryption and clipboard access require 
 
 ## Unraid
 
-Choose either the complete Compose stack or one DockerMan app template with infrastructure Compose. Both pull the published app and MinIO images. Do not run both methods against the same appdata.
+Choose the standalone AIO template for a single native Docker-GUI entry, or keep the separate-container Compose deployments below. Do not run different methods against the same appdata.
+
+### All-In-One Docker Template
+
+Run this **one line in the Unraid terminal** to install the template:
+
+```bash
+(script=$(mktemp) && trap 'rm -f -- "$script"' EXIT && curl -fsSL --proto '=https' --proto-redir '=https' https://raw.githubusercontent.com/gottschalkfelix4-source/sharedrive/master/unraid/install-aio-template.sh -o "$script" && bash "$script")
+```
+
+Select **Docker -> Add Container -> Template -> ShareDrive-AIO** and apply. Unraid downloads `ghcr.io/gottschalkfelix4-source/sharedrive-aio:latest`. No repository checkout, Compose, separate service containers or local builds are needed. The installer only creates the template; it does not start a container and backs up a changed existing template before replacing it.
+
+The template exposes one HTTP port, **8088 -> 3000**, and one persistent directory, **`/mnt/user/appdata/sharedrive-aio -> /data`**. Select another host port if an existing stack already uses 8088. Keep bridge networking, provide at least 6 GB RAM, and set **Trusted reverse proxy** to the actual connecting proxy IP/CIDR. The advanced SMTP allowlist is optional. Do not enable privileged mode or mount the Docker socket.
+
+First startup generates private credentials in `/data/config/secrets.json` and a setup token in `/data/.setup/token`, initializes PostgreSQL and storage, applies migrations and loads bundled ClamAV signatures. These bundled signatures allow startup without an online signature download; FreshClam refreshes them in the background when connectivity permits. Allow several minutes for initial database/scanner startup. Read `/mnt/user/appdata/sharedrive-aio/.setup/token` locally, point your existing reverse proxy at `http://UNRAID-IP:8088`, then complete setup using your public HTTPS URL. Secrets and the setup token are not printed to logs.
+
+Enable **Autostart** and use Unraid's normal **Check for Updates / Update** action for this container. Updates restart all bundled services together; all data persists in appdata. **Stop the container and back up the entire AIO appdata directory before updating.** Keep the template's 120-second stop timeout. AIO uses PostgreSQL 16 and does not automatically upgrade database majors. See [AIO operations and recovery](docs/operations.md#unraid-all-in-one).
+
+This is a separate installation, not an automatic migration: **do not select existing Compose or DockerMan appdata**. Existing split deployments remain supported and unchanged.
 
 ### Complete Stack
 
@@ -125,7 +144,7 @@ For an older DockerMan installation, back up and stop its old Web and Backend co
 
 ## Configuration
 
-Application settings live in **Admin -> Settings**. Infrastructure configuration stays in your private `.env`. Never put credentials in Git or XML templates.
+Application settings live in **Admin -> Settings**. Separate-container infrastructure configuration stays in your private `.env`; AIO generates and preserves its own private `/data/config/secrets.json`. Never put credentials in Git or XML templates. AIO accepts `TRUST_PROXY` and optional `SMTP_ALLOWED_HOSTS` through DockerMan; the remaining table describes the separate-container deployment.
 
 | Variable | Purpose |
 | --- | --- |
@@ -153,6 +172,8 @@ Browser encryption uses AES-256-GCM in 8 MiB chunks. Version 2 authenticates chu
 Encrypted transfers cannot be virus-scanned. Plaintext uploads require a clean scan when scanning is enabled; scanner failures do not publish a clean transfer. Administrators can access unencrypted contents and metadata. Encryption hides contents and encrypted names while the key stays private; sizes, MIME types, dates, owners and notification email remain visible. IP masking and retention do not alone establish legal compliance.
 
 ## Updates And Backups
+
+For AIO, stop the container, back up its complete appdata directory and use Unraid's image update action as described above. The following commands and `scripts/backup.sh` are for the separate-container deployments, **not AIO**.
 
 Back up before updates, stop application writes, update the checkout, pull the published images and recreate the affected containers. For standard Compose:
 
