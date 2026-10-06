@@ -1,0 +1,13 @@
+# Optional development override. Production deployments pull published images.
+# docker compose -f docker-compose.yml -f docker-compose.build.yml up --build -d
+services:
+  backend:
+    image: sharedrive:local
+    build:
+      context: .
+      dockerfile: backend/Dockerfile
+  minio:
+    image: sharedrive-minio:local
+    build:
+      context: .
+      dockerfile: unraid/Dockerfile.minio

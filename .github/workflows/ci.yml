@@ -137,3 +137,163 @@ jobs:
       - name: Service logs on failure
         if: failure()
         run: docker logs sharedrive-ci-minio; docker logs sharedrive-ci-clamav
+  publish:
+    needs: [deployment, frontend, backend, storage-integration]
+    if: github.event_name == 'push' && github.ref == 'refs/heads/master' && github.repository == 'gottschalkfelix4-source/sharedrive'
+    runs-on: ubuntu-24.04
+    timeout-minutes: 45
+    concurrency:
+      group: sharedrive-ghcr-master
+      cancel-in-progress: false
+    permissions:
+      contents: read
+      packages: write
+    outputs:
+      app_digest: ${{ steps.app.outputs.digest }}
+      minio_digest: ${{ steps.minio.outputs.digest }}
+    steps:
+      - uses: actions/checkout@v5
+        with:
+          ref: ${{ github.sha }}
+      - name: Set up Docker Buildx
+        uses: docker/setup-buildx-action@v4
+      - name: Log in to GitHub Container Registry
+        uses: docker/login-action@v4
+        with:
+          registry: ghcr.io
+          username: ${{ github.actor }}
+          password: ${{ secrets.GITHUB_TOKEN }}
+      - name: Publish application image
+        id: app
+        uses: docker/build-push-action@v7
+        with:
+          context: .
+          file: backend/Dockerfile
+          platforms: linux/amd64
+          push: true
+          tags: ghcr.io/gottschalkfelix4-source/sharedrive:sha-${{ github.sha }}
+          labels: |
+            org.opencontainers.image.source=https://github.com/gottschalkfelix4-source/sharedrive
+            org.opencontainers.image.revision=${{ github.sha }}
+          cache-from: type=gha,scope=sharedrive-app
+          cache-to: type=gha,mode=max,scope=sharedrive-app
+      - name: Publish MinIO image
+        id: minio
+        uses: docker/build-push-action@v7
+        with:
+          context: .
+          file: unraid/Dockerfile.minio
+          platforms: linux/amd64
+          push: true
+          tags: ghcr.io/gottschalkfelix4-source/sharedrive-minio:sha-${{ github.sha }}
+          labels: |
+            org.opencontainers.image.source=https://github.com/gottschalkfelix4-source/sharedrive
+            org.opencontainers.image.revision=${{ github.sha }}
+          cache-from: type=gha,scope=sharedrive-minio
+          cache-to: type=gha,mode=max,scope=sharedrive-minio
+      - name: Promote current master images to latest
+        env:
+          APP_DIGEST: ${{ steps.app.outputs.digest }}
+          MINIO_DIGEST: ${{ steps.minio.outputs.digest }}
+        run: |
+          set -euo pipefail
+          current_sha=$(git ls-remote origin refs/heads/master | awk '{print $1}')
+          test -n "$current_sha"
+          if [[ "$current_sha" == "$GITHUB_SHA" ]]; then
+            docker buildx imagetools create --tag ghcr.io/gottschalkfelix4-source/sharedrive:latest "ghcr.io/gottschalkfelix4-source/sharedrive@$APP_DIGEST"
+            docker buildx imagetools create --tag ghcr.io/gottschalkfelix4-source/sharedrive-minio:latest "ghcr.io/gottschalkfelix4-source/sharedrive-minio@$MINIO_DIGEST"
+            printf 'Promoted current master images to latest.\n' >> "$GITHUB_STEP_SUMMARY"
+          else
+            printf 'Master advanced; retained commit images without replacing latest.\n' >> "$GITHUB_STEP_SUMMARY"
+          fi
+      - name: Record published image digests
+        env:
+          APP_DIGEST: ${{ steps.app.outputs.digest }}
+          MINIO_DIGEST: ${{ steps.minio.outputs.digest }}
+        run: |
+          set -euo pipefail
+          test -n "$APP_DIGEST"
+          test -n "$MINIO_DIGEST"
+          printf 'Application: ghcr.io/gottschalkfelix4-source/sharedrive@%s\n' "$APP_DIGEST" | tee -a "$GITHUB_STEP_SUMMARY"
+          printf 'MinIO: ghcr.io/gottschalkfelix4-source/sharedrive-minio@%s\n' "$MINIO_DIGEST" | tee -a "$GITHUB_STEP_SUMMARY"
+  published-deployment:
+    needs: publish
+    runs-on: ubuntu-24.04
+    timeout-minutes: 30
+    permissions:
+      contents: read
+    env:
+      SHAREDRIVE_IMAGE: ghcr.io/gottschalkfelix4-source/sharedrive@${{ needs.publish.outputs.app_digest }}
+      MINIO_IMAGE: ghcr.io/gottschalkfelix4-source/sharedrive-minio@${{ needs.publish.outputs.minio_digest }}
+      HTTP_PORT: '18088'
+      COMPOSE_PROJECT_NAME: sharedrive-published-ci
+    steps:
+      - uses: actions/checkout@v5
+        with:
+          ref: ${{ github.sha }}
+      - name: Prepare a fresh pull-only deployment
+        run: |
+          set -euo pipefail
+          export DOCKER_CONFIG="$RUNNER_TEMP/sharedrive-anonymous-docker"
+          printf 'DOCKER_CONFIG=%s\n' "$DOCKER_CONFIG" >> "$GITHUB_ENV"
+          mkdir -p "$DOCKER_CONFIG"
+          printf '{}\n' > "$DOCKER_CONFIG/config.json"
+          SHAREDRIVE_APPDATA="$PWD" bash unraid/prepare-config.sh --compose
+          sudo chown 1000:1000 .setup .setup/token
+          docker compose config --format json | python3 -c 'import json,sys; config=json.load(sys.stdin); assert len(config["services"]) == 5; assert all("build" not in service for service in config["services"].values()), "Default deployment must contain no build directives"'
+      - name: Verify both packages can be pulled anonymously
+        run: |
+          set -euo pipefail
+          pulled=false
+          for ((attempt=0; attempt<30; attempt++)); do
+            if docker pull "$SHAREDRIVE_IMAGE" && docker pull "$MINIO_IMAGE"; then pulled=true; break; fi
+            sleep 10
+          done
+          if [[ "$pulled" != true ]]; then
+            printf 'Both GHCR packages must be public for anonymous deployment.\n' >&2
+            exit 1
+          fi
+          docker compose pull
+      - name: Start all five services without builds and verify first setup
+        run: |
+          set -euo pipefail
+          docker compose up -d --no-build --pull never --wait --wait-timeout 900
+          test "$(docker compose ps --status running --services | wc -l)" -eq 5
+          curl -fsS http://127.0.0.1:18088/api/ready
+          curl -fsS http://127.0.0.1:18088/setup | grep -q '<div id="root">'
+          docker compose exec -T backend node <<'NODE'
+          const assert = require('node:assert/strict');
+          const fs = require('node:fs');
+          const root = 'http://127.0.0.1:3000/api';
+          const setupToken = fs.readFileSync('/app/.setup/token', 'utf8').trim();
+          async function verify() {
+            let response = await fetch(`${root}/setup/status`);
+            assert.equal(response.status, 200);
+            assert.equal((await response.json()).needsSetup, true);
+            response = await fetch(`${root}/setup`, {
+              method: 'POST',
+              headers: { 'content-type': 'application/json', 'x-setup-token': setupToken },
+              body: JSON.stringify({ email: 'ci-admin@example.com', username: 'ci-admin', password: 'CI-Admin-Fixture-123!', baseUrl: 'http://localhost:18088' }),
+            });
+            assert.equal(response.status, 201);
+            response = await fetch(`${root}/auth/login`, {
+              method: 'POST', headers: { 'content-type': 'application/json' },
+              body: JSON.stringify({ email: 'ci-admin@example.com', password: 'CI-Admin-Fixture-123!' }),
+            });
+            assert.equal(response.status, 200);
+            assert.match(response.headers.get('set-cookie'), /HttpOnly/);
+            assert.equal((await response.json()).user.role, 'ADMIN');
+            response = await fetch(`${root}/setup/status`);
+            assert.equal((await response.json()).needsSetup, false);
+            console.log('Anonymous published-image deployment and initial admin login passed.');
+          }
+          verify().catch((error) => { console.error(error); process.exit(1); });
+          NODE
+      - name: Deployment logs on failure
+        if: failure()
+        run: |
+          if [[ -f .env ]]; then docker compose logs --no-color --tail 100; fi
+      - name: Remove ephemeral CI containers and volumes
+        if: always()
+        run: |
+          if [[ -f .env ]]; then docker compose down -v --remove-orphans; fi

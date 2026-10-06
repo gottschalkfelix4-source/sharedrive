@@ -1,15 +1,15 @@
 <?xml version="1.0" encoding="utf-8"?>
 <Container version="2">
   <Name>ShareDrive-Backend</Name>
-  <Repository>sharedrive:unraid</Repository>
-  <Registry/>
+  <Repository>ghcr.io/gottschalkfelix4-source/sharedrive:latest</Repository>
+  <Registry>https://github.com/gottschalkfelix4-source/sharedrive/pkgs/container/sharedrive</Registry>
   <Network>sharedrive</Network>
   <MyIP/>
   <Shell>sh</Shell>
   <Privileged>false</Privileged>
   <Support>https://github.com/gottschalkfelix4-source/sharedrive/issues</Support>
   <Project>https://github.com/gottschalkfelix4-source/sharedrive</Project>
-  <Overview>ShareDrive web application and API in one container. Build sharedrive:unraid from the repository root with backend/Dockerfile. Requires the sharedrive Docker network and PostgreSQL, Redis, MinIO and ClamAV. HTTP is published on port 8088; your existing reverse proxy manages HTTPS and certificates. Prepare the .env and setup token before applying this template. Startup applies versioned database migrations; baseline legacy db-push installations and back up before upgrades. Runs as UID/GID 1000.</Overview>
+  <Overview>ShareDrive web application and API in one published container image. Requires the sharedrive Docker network and PostgreSQL, Redis, MinIO and ClamAV. HTTP is published on port 8088; your existing reverse proxy manages HTTPS and certificates. Prepare the .env and setup token before applying this template. Startup applies versioned database migrations; baseline legacy db-push installations and back up before upgrades. Runs as UID/GID 1000.</Overview>
   <Category>Network:Other Productivity:</Category>
   <WebUI>http://[IP]:[PORT:3000]/</WebUI>
   <TemplateURL>https://raw.githubusercontent.com/gottschalkfelix4-source/sharedrive/master/unraid/templates/sharedrive-backend.xml</TemplateURL>

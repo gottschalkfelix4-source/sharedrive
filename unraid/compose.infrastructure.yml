@@ -30,10 +30,7 @@ services:
     networks: [sharedrive]
 
   minio:
-    image: ${MINIO_IMAGE:-sharedrive-minio:unraid}
-    build:
-      context: ..
-      dockerfile: unraid/Dockerfile.minio
+    image: ${MINIO_IMAGE:-ghcr.io/gottschalkfelix4-source/sharedrive-minio:latest}
     command: server /data --console-address ":9001"
     env_file: ${SHAREDRIVE_APPDATA:-/mnt/user/appdata/sharedrive}/.env
     volumes:

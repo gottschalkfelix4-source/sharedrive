@@ -1,9 +1,6 @@
 services:
   backend:
-    image: ${SHAREDRIVE_IMAGE:-sharedrive:local}
-    build:
-      context: .
-      dockerfile: backend/Dockerfile
+    image: ${SHAREDRIVE_IMAGE:-ghcr.io/gottschalkfelix4-source/sharedrive:latest}
     container_name: sharedrive-backend
     env_file: .env
     environment:
@@ -60,10 +57,7 @@ services:
       - sharedrive-net
 
   minio:
-    image: ${MINIO_IMAGE:-sharedrive-minio:local}
-    build:
-      context: .
-      dockerfile: unraid/Dockerfile.minio
+    image: ${MINIO_IMAGE:-ghcr.io/gottschalkfelix4-source/sharedrive-minio:latest}
     container_name: sharedrive-minio
     command: server /data --console-address ":9001"
     env_file: .env

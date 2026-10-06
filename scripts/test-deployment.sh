@@ -1,5 +1,5 @@
 #!/usr/bin/env bash
-# Check credential bootstrap and template installation without Docker or real data.
+# Check configuration and helpers without starting containers or using real data.
 set -euo pipefail
 repo_dir=$(cd -- "$(dirname -- "${BASH_SOURCE[0]}")/.." && pwd)
 temp_dir=$(mktemp -d)
@@ -50,6 +50,29 @@ SHAREDRIVE_TEMPLATES_DIR="$temp_dir/templates" bash "$repo_dir/unraid/install-te
 [[ ! -e "$temp_dir/templates/user-sharedrive-web.xml" ]]
 SHAREDRIVE_TEMPLATES_DIR="$temp_dir/templates" bash "$repo_dir/unraid/install-templates.sh"
 [[ $(find "$temp_dir/templates" -type f | wc -l) -eq 1 ]]
+
+# Render primary deployments: production images must be pullable without builds.
+for compose_file in docker-compose.yml unraid/compose.yml unraid/compose.infrastructure.yml; do
+  env -u SHAREDRIVE_IMAGE -u MINIO_IMAGE SHAREDRIVE_APPDATA="$appdata" docker compose \
+    --env-file "$appdata/.env" -f "$repo_dir/$compose_file" \
+    config --no-env-resolution > "$temp_dir/compose.yml"
+  if grep -Eq '^[[:space:]]+build:' "$temp_dir/compose.yml"; then
+    printf 'Production compose file contains a build: %s\n' "$compose_file" >&2
+    exit 1
+  fi
+  grep -q 'image: ghcr.io/gottschalkfelix4-source/sharedrive-minio:latest' "$temp_dir/compose.yml"
+  if [[ "$compose_file" != unraid/compose.infrastructure.yml ]]; then
+    grep -q 'image: ghcr.io/gottschalkfelix4-source/sharedrive:latest' "$temp_dir/compose.yml"
+  fi
+done
+command docker compose --env-file "$appdata/.env" -f "$repo_dir/docker-compose.yml" \
+  -f "$repo_dir/docker-compose.build.yml" config --no-env-resolution > "$temp_dir/build.yml"
+grep -q 'dockerfile: backend/Dockerfile' "$temp_dir/build.yml"
+grep -q 'dockerfile: unraid/Dockerfile.minio' "$temp_dir/build.yml"
+grep -q 'image: sharedrive:local' "$temp_dir/build.yml"
+grep -q 'image: sharedrive-minio:local' "$temp_dir/build.yml"
+grep -q '<Repository>ghcr.io/gottschalkfelix4-source/sharedrive:latest</Repository>' "$temp_dir/templates/user-sharedrive-backend.xml"
+grep -q '<Registry>https://github.com/gottschalkfelix4-source/sharedrive/pkgs/container/sharedrive</Registry>' "$temp_dir/templates/user-sharedrive-backend.xml"
 
 # Exercise full-stack backup selection and restoration of running containers.
 export SHAREDRIVE_TEST_DOCKER_LOG="$temp_dir/docker.log"

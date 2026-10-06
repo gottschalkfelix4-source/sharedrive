@@ -13,7 +13,14 @@ Architektur; deren Prüfungen sind im zugehörigen Änderungsstand/CI zu verfolg
 
 ## Aktueller Deployment-Stand
 
-- Ein gemeinsames App-Image, gebaut mit `docker build -f backend/Dockerfile -t sharedrive:unraid .`.
+- Ein gemeinsames veröffentlichtes App-Image:
+  `ghcr.io/gottschalkfelix4-source/sharedrive:latest`; MinIO liegt unter
+  `ghcr.io/gottschalkfelix4-source/sharedrive-minio:latest`.
+- Alle drei produktiven Compose-Dateien verwenden fertige Registry-Images;
+  Installation und Updates erfolgen mit `pull` und `up --no-build`.
+- Erfolgreiche CI-Prüfungen auf `master` veröffentlichen linux/amd64-Images mit
+  `latest` und `sha-<vollständiger Commit-SHA>`. Image-Overrides ermöglichen feste
+  Commit-Tags oder Digests; lokale Builds bleiben als Entwicklungs-Override verfügbar.
 - Fünf Dienste im vollständigen Compose-Stack; nur die App veröffentlicht Port 8088.
 - Ein DockerMan-App-Template plus vier interne Infrastruktur-Dienste als Alternative.
 - Zufällige Secrets und privates Setup-Token werden vor Erststart lokal erzeugt;

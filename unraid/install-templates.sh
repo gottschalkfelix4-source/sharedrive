@@ -39,4 +39,4 @@ else
   printf 'Installed: %s\n' "$target"
 fi
 printf 'Unraid: Docker -> Add Container -> Template -> ShareDrive-Backend.\n'
-printf 'Prepare the local images and infrastructure as documented in the README before applying.\n'
+printf 'Prepare appdata and start the infrastructure as documented in the README before applying.\n'

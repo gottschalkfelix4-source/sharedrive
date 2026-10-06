@@ -18,7 +18,14 @@ Browser -- HTTPS --> Your reverse proxy -- HTTP :8088 --> ShareDrive :3000
 
 PostgreSQL stores users, transfers, settings and durable upload/scan/deletion jobs. MinIO stores objects, Redis provides shared rate limits and ClamAV scans plaintext uploads. Only ShareDrive publishes a host port. Files stream through the app; browsers never access MinIO directly.
 
-Requirements: Docker, Docker Compose v2, Git, Bash and OpenSSL. Allow at least 3 GB RAM for ClamAV in addition to the application, database and storage, and enough build space for MinIO.
+Requirements: Docker, Docker Compose v2, Git, Bash and OpenSSL. Allow at least 3 GB RAM for ClamAV in addition to the application, database and storage. Production uses ready-to-pull images; no local image build or Node installation is required.
+
+| Published Image | Contents |
+| --- | --- |
+| `ghcr.io/gottschalkfelix4-source/sharedrive:latest` | Web interface and API |
+| `ghcr.io/gottschalkfelix4-source/sharedrive-minio:latest` | MinIO built from the repository's pinned official source |
+
+Published images target `linux/amd64`, including typical Unraid servers.
 
 ### Docker Compose
 
@@ -31,10 +38,13 @@ bash unraid/prepare-config.sh --compose
 The helper generates database, MinIO and JWT secrets plus a private setup token before first start. Repeating it preserves existing credentials and data. Configure `HTTP_PORT` and `TRUST_PROXY` in `.env` for your reverse proxy, then start:
 
 ```bash
-docker compose up --build -d --wait --wait-timeout 900
+docker compose pull
+docker compose up -d --no-build --wait --wait-timeout 900
 ```
 
-Alternatively, `bash start.sh` prepares configuration and starts the stack. The first ClamAV signature download and MinIO build can take several minutes.
+The root Compose file reads `.env` and mounts `.setup` relative to its own directory. Keep those files beside it if moving the stack, and preserve the project name to keep using existing named data volumes.
+
+Alternatively, `bash start.sh` prepares configuration, pulls the images and starts the stack. The first image download and ClamAV signature download can take several minutes.
 
 Point your reverse proxy at `http://SERVER-IP:8088`, open the public HTTPS URL, enter the token read locally from `.setup/token`, set the public URL and create the admin account. The wizard does not change infrastructure credentials or configure certificates. Setup closes once an admin exists.
 
@@ -71,7 +81,7 @@ Use HTTPS for normal operation. Browser encryption and clipboard access require 
 
 ## Unraid
 
-Choose either the complete Compose stack or one DockerMan app template with infrastructure Compose. Both use two locally built images: the combined app and MinIO. Do not run both methods against the same appdata.
+Choose either the complete Compose stack or one DockerMan app template with infrastructure Compose. Both pull the published app and MinIO images. Do not run both methods against the same appdata.
 
 ### Complete Stack
 
@@ -82,34 +92,34 @@ mkdir -p /mnt/user/appdata/sharedrive
 git clone --branch master https://github.com/gottschalkfelix4-source/sharedrive.git /mnt/user/appdata/sharedrive/source
 cd /mnt/user/appdata/sharedrive/source
 bash unraid/prepare-config.sh --unraid
-docker build -t sharedrive:unraid -f backend/Dockerfile .
-docker build -t sharedrive-minio:unraid -f unraid/Dockerfile.minio .
 ```
 
 Configure `/mnt/user/appdata/sharedrive/.env`, particularly `HTTP_PORT` and `TRUST_PROXY`, then start:
 
 ```bash
-docker compose --env-file /mnt/user/appdata/sharedrive/.env -f unraid/compose.yml up -d --wait --wait-timeout 900
+docker compose --env-file /mnt/user/appdata/sharedrive/.env -f unraid/compose.yml pull
+docker compose --env-file /mnt/user/appdata/sharedrive/.env -f unraid/compose.yml up -d --no-build --wait --wait-timeout 900
 ```
 
-Keep [unraid/compose.yml](unraid/compose.yml) in the checkout: its build contexts resolve relative to that file. `up --build` can build both local images directly instead of the manual builds. For Compose Manager, use that exact YAML path. If its YAML is saved elsewhere, set both build contexts to the absolute checkout path, such as `/mnt/user/appdata/sharedrive/source`; changing only the project directory does not fix relative build contexts. Persistent data stays under `/mnt/user/appdata/sharedrive/`. Only the app exposes **8088 HTTP**. Point your reverse proxy at `http://UNRAID-IP:8088` and complete setup with your public HTTPS URL and the token read locally from `/mnt/user/appdata/sharedrive/.setup/token`.
+Use [unraid/compose.yml](unraid/compose.yml) in Compose Manager or copy it to your preferred stack directory. It contains no build contexts; its appdata references default to `/mnt/user/appdata/sharedrive/`. Configure Compose Manager's project variables as described below and pull the images before starting. Only the app exposes **8088 HTTP**. Point your reverse proxy at `http://UNRAID-IP:8088` and complete setup with your public HTTPS URL and the token read locally from `/mnt/user/appdata/sharedrive/.setup/token`.
 
 For a custom appdata path, export `SHAREDRIVE_APPDATA` before preparation and every Compose command, and adjust file paths. Compose interpolation reads values from `--env-file`; configure Compose Manager project variables as needed. A service's `env_file` alone does not provide YAML interpolation values.
 
 ### DockerMan App Template
 
-After the same preparation and two image builds:
+After cloning the checkout and preparing configuration as above, without starting the complete stack:
 
 ```bash
 cd /mnt/user/appdata/sharedrive/source
 bash unraid/install-templates.sh
 docker network inspect sharedrive >/dev/null 2>&1 || docker network create sharedrive
-docker compose --env-file /mnt/user/appdata/sharedrive/.env -f unraid/compose.infrastructure.yml up -d --wait --wait-timeout 900
+docker compose --env-file /mnt/user/appdata/sharedrive/.env -f unraid/compose.infrastructure.yml pull
+docker compose --env-file /mnt/user/appdata/sharedrive/.env -f unraid/compose.infrastructure.yml up -d --no-build --wait --wait-timeout 900
 ```
 
-Select **Docker -> Add Container -> Template -> ShareDrive-Backend** and apply the template. This single container serves web interface and API. Keep its `sharedrive` network, token mount and `--env-file` path. Set the host port in DockerMan separately from `.env` `HTTP_PORT`. Enable autostart with enough time for infrastructure to become healthy. Local images must exist; disable registry auto-updates for the app image.
+Select **Docker -> Add Container -> Template -> ShareDrive-Backend** and apply the template. Unraid pulls the app from GHCR; this single container serves web interface and API. Keep its `sharedrive` network, token mount and `--env-file` path. Set the host port in DockerMan separately from `.env` `HTTP_PORT`. Enable autostart with enough time for infrastructure to become healthy. Back up before using Unraid's image update action.
 
-The importer preserves changed templates in backup files. It does not build images or start containers. No registry image or Community Applications listing is assumed. An archive with the app and MinIO images can be loaded using `docker load -i /path/to/sharedrive-images.tar.gz` instead of the two builds; it supplies no appdata or credentials.
+The importer preserves changed templates in backup files. It does not start containers. Images are published in GHCR; a Community Applications listing is not required.
 
 For an older DockerMan installation, back up and stop its old Web and Backend containers before applying the combined Backend template. Reuse the same appdata and infrastructure project. See [upgrade instructions](docs/operations.md#upgrade-from-the-previous-proxy-stack).
 
@@ -120,6 +130,8 @@ Application settings live in **Admin -> Settings**. Infrastructure configuration
 | Variable | Purpose |
 | --- | --- |
 | `HTTP_PORT` | Published app port, default `8088`; internal app port remains `3000` |
+| `SHAREDRIVE_IMAGE` | Optional app image override, including a published commit tag or digest |
+| `MINIO_IMAGE` | Optional MinIO image override, including a published commit tag or digest |
 | `TRUST_PROXY` | Trusted proxy IP/CIDR, comma-separated; default `loopback` |
 | `POSTGRES_USER`, `POSTGRES_PASSWORD`, `POSTGRES_DB`, `DATABASE_URL` | Database credentials and connection |
 | `MINIO_ROOT_USER`, `MINIO_ROOT_PASSWORD`, `MINIO_ACCESS_KEY`, `MINIO_SECRET_KEY` | Object storage credentials |
@@ -132,6 +144,8 @@ Application settings live in **Admin -> Settings**. Infrastructure configuration
 
 Settings include public Base URL, upload limits, retention, registration, email verification, SMTP, appearance, virus scanning and privacy/legal text. Certificates, DNS and proxy configuration belong to your existing reverse proxy.
 
+For reproducible deployments, set `SHAREDRIVE_IMAGE` and `MINIO_IMAGE` to the published `sha-<full 40-character Git commit SHA>` tags or full `ghcr.io/...@sha256:...` image references. In DockerMan, pin the app in its Repository field instead; infrastructure still uses `MINIO_IMAGE`. A pinned image changes only when you update that reference. `latest` follows successful publications from `master`.
+
 ## Encryption And Privacy
 
 Browser encryption uses AES-256-GCM in 8 MiB chunks. Version 2 authenticates chunk position, file identity and length plus an encrypted manifest. Existing version 1 transfers remain readable. The complete link carries the key in its fragment, such as `/d/abc123#key=...&v=2&ctx=...`; the server never receives that fragment. Keep the full link private. The server cannot recover lost keys.
@@ -140,16 +154,17 @@ Encrypted transfers cannot be virus-scanned. Plaintext uploads require a clean s
 
 ## Updates And Backups
 
-Back up before updates, stop application writes, update the checkout, rebuild the app image and recreate its container. Rebuild MinIO when its pinned source/image changes. For standard Compose:
+Back up before updates, stop application writes, update the checkout, pull the published images and recreate the affected containers. For standard Compose:
 
 ```bash
 bash scripts/backup.sh /absolute/new/backup-directory
 docker compose stop backend
 git pull --ff-only
-docker compose up --build -d --remove-orphans --wait --wait-timeout 900
+docker compose pull
+docker compose up -d --no-build --remove-orphans --wait --wait-timeout 900
 ```
 
-For complete Unraid Compose, use `--env-file /mnt/user/appdata/sharedrive/.env -f unraid/compose.yml`, rebuild the local images and use `--force-recreate`. Back up this mode with `bash scripts/backup.sh /mnt/user/backups/sharedrive-YYYY-MM-DD --unraid-compose`. The helper's `--unraid` flag is only for DockerMan with infrastructure Compose. In DockerMan use **Edit -> Apply** after rebuilding the app. A restart does not load new images or changed environment variables.
+For complete Unraid Compose, use `--env-file /mnt/user/appdata/sharedrive/.env -f unraid/compose.yml` with the same pull/start commands. Back up this mode with `bash scripts/backup.sh /mnt/user/backups/sharedrive-YYYY-MM-DD --unraid-compose`. The helper's `--unraid` flag is only for DockerMan with infrastructure Compose. In DockerMan use Unraid's image update action for the app; pull/recreate infrastructure with its own Compose file. Use **Edit -> Apply** when changing template environment or image references. A restart does not load new images or changed environment variables.
 
 Preserve the Compose project name and storage paths. **Do not use `down -v`, delete appdata or remove named volumes during upgrades.** Older `db push` installations may need the migration baseline before startup. [Operations](docs/operations.md) covers old-stack upgrades, credentials, backup/restore and legacy migrations.
 
@@ -177,8 +192,16 @@ npm run dev
 
 Vite proxies `/api` to `http://localhost:3000`; `API_PROXY_TARGET` overrides it. Native setup uses `backend/.setup-token` unless `SETUP_TOKEN_FILE` is supplied. Production images build the frontend and serve it with the API.
 
+For optional local image builds, from the repository root after preparing configuration:
+
+```bash
+docker compose -f docker-compose.yml -f docker-compose.build.yml up --build -d --wait --wait-timeout 900
+```
+
+The override builds local `sharedrive:local` and `sharedrive-minio:local` images. Production Compose files contain no build instructions. CI runs deployment, frontend, backend and real-storage integration checks; successful `master` builds publish the app and MinIO with `latest` and commit-specific tags.
+
 Run `npm test` and `npm run build` in each package. Browser and database/storage integration tests use isolated fixtures in [testing](docs/testing.md). The [German project review](docs/project-review.de.md) preserves the previous review and its validation boundaries; its proxy architecture is superseded.
 
 ## License
 
-ShareDrive: [MIT](LICENSE). MinIO is built from the pinned official source in `unraid/Dockerfile.minio` and is separately licensed under AGPL-3.0. Its build needs GitHub, the Go module proxy/checksum service and artifact hosts; preserve TLS/checksum validation.
+ShareDrive: [MIT](LICENSE). The published MinIO image is built in CI from the pinned official source in `unraid/Dockerfile.minio` and is separately licensed under AGPL-3.0. Source builds need GitHub, the Go module proxy/checksum service and artifact hosts; preserve TLS/checksum validation. Pulling the published image does not require those build tools or services on your server.

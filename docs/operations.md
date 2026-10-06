@@ -82,18 +82,20 @@ certificate configuration are no longer used. Your existing reverse proxy provid
 1. Back up configuration, database and MinIO; let active uploads finish and stop
    application writes. Check legacy migration requirements above before startup.
 2. Keep the existing `.env`, token directory, Compose project name, database/storage
-   volume names and appdata paths. Build the combined app from the repository root:
-   `docker build -f backend/Dockerfile -t sharedrive:unraid .` for Unraid.
+   volume names and appdata paths. The combined app and pinned-source MinIO images
+   are published in GHCR; pull them using your existing deployment's Compose arguments.
 3. Update `HTTP_PORT` to an available private port, typically 8088, and configure
    `TRUST_PROXY` for the actual external proxy. Old `DOMAIN`, `ACME_EMAIL`,
    `HTTPS_PORT` and `CADDY_TRUSTED_PROXIES` settings are unused.
-4. For standard Compose, use `docker compose up --build -d --remove-orphans --wait --wait-timeout 900`.
-   For complete Unraid Compose, use the checkout's `unraid/compose.yml`, rebuild
-   local images and use the appdata Compose arguments with `--force-recreate --remove-orphans`.
+4. For standard Compose, run `docker compose pull`, then
+   `docker compose up -d --no-build --remove-orphans --wait --wait-timeout 900`.
+   For complete Unraid Compose, use `unraid/compose.yml` and the appdata Compose
+   arguments for both commands, adding `--force-recreate` when changing environment.
    This removes old proxy containers while keeping persistent data.
 5. For DockerMan, stop the old Web and Backend containers, update the infrastructure
-   Compose file and run it with `--remove-orphans`. Apply the combined Backend
-   template using the same appdata/network and the published HTTP port. Remove the
+   Compose file, pull its images and start with `--no-build --remove-orphans`.
+   Apply the combined Backend template with its GHCR Repository, using the same
+   appdata/network and the published HTTP port. Remove the
    old Web container after checking the new app. Its separate local image is unused.
 6. Point the existing reverse proxy at the new HTTP port. Keep the saved public
    Base URL and admin account; completed installations do not repeat first setup.
@@ -125,10 +127,21 @@ requires a successful virus scan; scanner failures never publish a clean transfe
 Allow at least 3 GB for ClamAV plus database, app and storage; adjust configured
 limits to available RAM/CPU. Resource caps can cause large scans to fail closed.
 
-MinIO is built from the official source-only release pinned in
-`unraid/Dockerfile.minio`; its separate license is AGPL-3.0. Building needs GitHub,
-the Go module proxy/checksum service and artifact hosts such as storage.googleapis.com.
-Preserve checksum and TLS validation. Review pinned image/source versions periodically.
+The public images `ghcr.io/gottschalkfelix4-source/sharedrive:latest` and
+`ghcr.io/gottschalkfelix4-source/sharedrive-minio:latest` target linux/amd64.
+Successful `master` CI runs publish them after deployment, frontend, backend and
+real-storage integration checks. Set `SHAREDRIVE_IMAGE` and `MINIO_IMAGE` in the
+Compose environment to a published `sha-<full 40-character commit SHA>` tag or
+registry digest for a fixed deployment. Pin DockerMan's app Repository separately.
+With pinned references, update those values before pulling an intended new release.
+Keep configuration and database migration compatibility in mind when rolling back:
+an older image is not a database restore.
+
+The MinIO image is built in CI from the official source-only release pinned in
+`unraid/Dockerfile.minio`; its separate license is AGPL-3.0. No source build is
+required on a production server. Optional local builds need GitHub, the Go module
+proxy/checksum service and artifact hosts such as storage.googleapis.com; preserve
+checksum and TLS validation. Review pinned image/source versions periodically.
 No S3 provider mapping or external-storage migration is part of this change.
 
 ## Backup and restore

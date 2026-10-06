@@ -28,6 +28,13 @@ CI additionally builds the combined application image and checks its frontend,
 deep links and API over HTTP, plus all three Compose configurations and the
 configuration/template/backup helper tests.
 
+On `master`, publication waits for all four CI jobs: deployment, frontend, backend
+and storage integration. It publishes linux/amd64 app and pinned-source MinIO images
+to GHCR with `latest` and `sha-<full 40-character commit SHA>` tags. Pull the published
+images without build instructions when verifying installation; a local build cannot
+establish anonymous registry availability. After publication, the workflow checks
+pulling with fresh authentication configuration and starts the five-service stack.
+
 ## Database and API integration
 
 Use a **disposable local database** whose name ends in `_test`, an isolated Redis
@@ -78,6 +85,9 @@ or storage durability correctness; CI's separate storage job runs without it.
 Before rollout, validate root Compose, complete Unraid Compose and infrastructure
 Compose, the single Unraid app XML and helper shell syntax. Confirm that only the
 app publishes an HTTP port and the combined image serves frontend routes and API.
+Confirm all primary Compose files use registry images without build keys. Check
+`docker compose pull` followed by `up -d --no-build` and verify anonymous pulls from
+GHCR for both app and MinIO. Optional developer builds use `docker-compose.build.yml`.
 Test fresh migrations and the legacy baseline on disposable
 databases; confirm a final schema diff is empty and seeded data remains. Test backup /
 restore into a separate database and byte-compare stored objects. On the target Unraid
@@ -89,7 +99,8 @@ Exercise an old-stack upgrade using preserved volumes and existing credentials.
 The importer downloads the published app template from `master`.
 
 `bash scripts/test-deployment.sh` checks configuration preparation, preservation of
-existing secrets, template import and backup service selection with
+existing secrets, template import, public registry references without production
+build keys, the optional build override and backup service selection with
 temporary fixtures and mocked Docker calls. It does not replace a real container
 startup or backup/restore test.
 

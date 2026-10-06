@@ -12,8 +12,10 @@ cd "$repo_dir"
 SHAREDRIVE_APPDATA="$repo_dir" ./unraid/prepare-config.sh --compose
 
 echo ""
+echo "Pulling published images..."
+docker compose pull
 echo "Starting services..."
-docker compose up --build -d --wait --remove-orphans
+docker compose up --no-build -d --wait --wait-timeout 900 --remove-orphans
 
 echo ""
 echo "ShareDrive is running!"
