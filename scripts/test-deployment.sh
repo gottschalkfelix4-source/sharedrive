@@ -52,9 +52,14 @@ SHAREDRIVE_TEMPLATES_DIR="$temp_dir/templates" bash "$repo_dir/unraid/install-te
 [[ $(find "$temp_dir/templates" -type f | wc -l) -eq 1 ]]
 
 # Render primary deployments: production images must be pullable without builds.
+cp -- "$repo_dir/docker-compose.yml" "$repo_dir/docker-compose.build.yml" "$appdata/"
 for compose_file in docker-compose.yml unraid/compose.yml unraid/compose.infrastructure.yml; do
+  compose_source="$repo_dir/$compose_file"
+  if [[ "$compose_file" == docker-compose.yml ]]; then
+    compose_source="$appdata/docker-compose.yml"
+  fi
   env -u SHAREDRIVE_IMAGE -u MINIO_IMAGE SHAREDRIVE_APPDATA="$appdata" docker compose \
-    --env-file "$appdata/.env" -f "$repo_dir/$compose_file" \
+    --env-file "$appdata/.env" -f "$compose_source" \
     config --no-env-resolution > "$temp_dir/compose.yml"
   if grep -Eq '^[[:space:]]+build:' "$temp_dir/compose.yml"; then
     printf 'Production compose file contains a build: %s\n' "$compose_file" >&2
@@ -65,8 +70,8 @@ for compose_file in docker-compose.yml unraid/compose.yml unraid/compose.infrast
     grep -q 'image: ghcr.io/gottschalkfelix4-source/sharedrive:latest' "$temp_dir/compose.yml"
   fi
 done
-command docker compose --env-file "$appdata/.env" -f "$repo_dir/docker-compose.yml" \
-  -f "$repo_dir/docker-compose.build.yml" config --no-env-resolution > "$temp_dir/build.yml"
+command docker compose --env-file "$appdata/.env" -f "$appdata/docker-compose.yml" \
+  -f "$appdata/docker-compose.build.yml" config --no-env-resolution > "$temp_dir/build.yml"
 grep -q 'dockerfile: backend/Dockerfile' "$temp_dir/build.yml"
 grep -q 'dockerfile: unraid/Dockerfile.minio' "$temp_dir/build.yml"
 grep -q 'image: sharedrive:local' "$temp_dir/build.yml"
