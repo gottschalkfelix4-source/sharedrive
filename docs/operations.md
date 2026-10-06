@@ -162,7 +162,12 @@ then restore the database with the destination's own credentials:
 docker compose exec -T postgres sh -c 'pg_restore --exit-on-error --no-owner --no-acl -U "$POSTGRES_USER" -d "$POSTGRES_DB"' < /path/to/backup/database.dump
 ```
 
-For Unraid, use the same infrastructure Compose arguments as in the README. Do not
+For complete Unraid Compose, use `--env-file /mnt/user/appdata/sharedrive/.env
+-f unraid/compose.yml` and the existing `sharedrive-unraid-stack` project for the
+restore command. For DockerMan with infrastructure Compose, use the same env file
+and `-f unraid/compose.infrastructure.yml` with its existing `sharedrive-unraid`
+project. Keep the deployment mode and any custom project name consistent; do not
+start the other stack against the same storage directories. Do not
 run this against a nonempty database. Run migrations, start the app, check readiness
 and byte-compare a representative download, plus an encrypted link and a scanned upload.
 Recovering into an old production volume or overwriting it is a separate deliberate

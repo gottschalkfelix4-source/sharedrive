@@ -89,7 +89,7 @@ Exercise an old-stack upgrade using preserved volumes and existing credentials.
 The importer downloads the published app template from `master`.
 
 `bash scripts/test-deployment.sh` checks configuration preparation, preservation of
-existing secrets, template import, private ports and backup service selection with
+existing secrets, template import and backup service selection with
 temporary fixtures and mocked Docker calls. It does not replace a real container
 startup or backup/restore test.
 
