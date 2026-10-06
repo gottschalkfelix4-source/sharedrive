@@ -69,6 +69,10 @@ unset -f curl
 
 grep -q '<Network>bridge</Network>' "$template"
 grep -q '<Privileged>false</Privileged>' "$template"
+icon_url=https://raw.githubusercontent.com/gottschalkfelix4-source/sharedrive/master/unraid/assets/sharedrive-logo.png
+grep -Fq "<Icon>$icon_url</Icon>" "$template"
+grep -Fq "<Icon>$icon_url</Icon>" "$repo_dir/unraid/templates/sharedrive-backend.xml"
+[[ $(od -An -tx1 -N8 "$repo_dir/unraid/assets/sharedrive-logo.png" | tr -d ' \n') == 89504e470d0a1a0a ]]
 grep -q 'Target="/data"' "$template"
 grep -q 'Target="TRUST_PROXY"' "$template"
 grep -q 'Target="SMTP_ALLOWED_HOSTS"' "$template"

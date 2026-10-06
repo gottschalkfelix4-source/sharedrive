@@ -9,6 +9,7 @@
   <Privileged>false</Privileged>
   <Support>https://github.com/gottschalkfelix4-source/sharedrive/issues</Support>
   <Project>https://github.com/gottschalkfelix4-source/sharedrive</Project>
+  <Icon>https://raw.githubusercontent.com/gottschalkfelix4-source/sharedrive/master/unraid/assets/sharedrive-logo.png</Icon>
   <Overview>ShareDrive web application and API in one published container image. Requires the sharedrive Docker network and PostgreSQL, Redis, MinIO and ClamAV. HTTP is published on port 8088; your existing reverse proxy manages HTTPS and certificates. Prepare the .env and setup token before applying this template. Startup applies versioned database migrations; baseline legacy db-push installations and back up before upgrades. Runs as UID/GID 1000.</Overview>
   <Category>Network:Other Productivity:</Category>
   <WebUI>http://[IP]:[PORT:3000]/</WebUI>
