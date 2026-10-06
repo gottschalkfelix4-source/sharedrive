@@ -1,10 +1,9 @@
 import { useState, useEffect } from 'react'
 import { useQuery, useMutation } from '@tanstack/react-query'
 import { Save, Globe, FlaskConical, Copy, Check } from 'lucide-react'
-import { getAllSettings, updateSettings } from '@/api/settings'
 import { getDiagToken } from '@/api/admin'
 import { Button } from '@/components/ui/Button'
-import { Input, Textarea } from '@/components/ui/Input'
+import { ManagedInput as Input, ManagedTextarea as Textarea, useAdminSettings } from './ManagedSettings'
 import { Spinner } from '@/components/ui/Spinner'
 import toast from 'react-hot-toast'
 
@@ -100,10 +99,7 @@ function DiagCard() {
 }
 
 export function GeneralSettings() {
-  const { data: settings, isLoading } = useQuery({
-    queryKey: ['admin-settings'],
-    queryFn: getAllSettings,
-  })
+  const { settings, isLoading, saveSettings, canSave } = useAdminSettings()
 
   const [form, setForm] = useState({
     'app.name': '',
@@ -124,7 +120,7 @@ export function GeneralSettings() {
   }, [settings])
 
   const mutation = useMutation({
-    mutationFn: updateSettings,
+    mutationFn: saveSettings,
     onSuccess: () => toast.success('Einstellungen gespeichert'),
     onError: () => toast.error('Speichern fehlgeschlagen'),
   })
@@ -155,12 +151,14 @@ export function GeneralSettings() {
 
         <div className="space-y-4">
           <Input
+            settingKey="app.name"
             label="Anwendungsname"
             value={form['app.name']}
             onChange={(e) => setForm({ ...form, 'app.name': e.target.value })}
             hint="Wird im Browser-Tab und in E-Mails angezeigt"
           />
           <Input
+            settingKey="app.baseUrl"
             label="Basis-URL"
             placeholder="https://share.yourdomain.com"
             value={form['app.baseUrl']}
@@ -171,6 +169,7 @@ export function GeneralSettings() {
             hint="Öffentliche URL dieser Instanz – wird in Download-Links und E-Mails verwendet. Kein abschließender Schrägstrich."
           />
           <Textarea
+            settingKey="app.description"
             label="Beschreibung"
             rows={3}
             value={form['app.description']}
@@ -180,6 +179,7 @@ export function GeneralSettings() {
             hint="Wird auf der Startseite angezeigt"
           />
           <Input
+            settingKey="app.maxFilesPerTransfer"
             label="Max. Dateien pro Transfer"
             type="number"
             min="1"
@@ -196,6 +196,7 @@ export function GeneralSettings() {
           <Button
             icon={<Save size={15} />}
             loading={mutation.isPending}
+            disabled={!canSave(Object.keys(form))}
             onClick={() => mutation.mutate(form)}
           >
             Änderungen speichern

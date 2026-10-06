@@ -1,15 +1,14 @@
 import { useState, useEffect } from 'react'
-import { useQuery, useMutation } from '@tanstack/react-query'
+import { useMutation } from '@tanstack/react-query'
 import { Save, Mail, TestTube } from 'lucide-react'
-import { getAllSettings, updateSettings, testEmail } from '@/api/settings'
+import { testEmail } from '@/api/settings'
 import { Button } from '@/components/ui/Button'
-import { Input } from '@/components/ui/Input'
-import { Toggle } from '@/components/ui/Toggle'
+import { ManagedInput as Input, ManagedToggle as Toggle, useAdminSettings } from './ManagedSettings'
 import { Spinner } from '@/components/ui/Spinner'
 import toast from 'react-hot-toast'
 
 export function EmailSettings() {
-  const { data: settings, isLoading } = useQuery({ queryKey: ['admin-settings'], queryFn: getAllSettings })
+  const { settings, isLoading, saveSettings, canSave } = useAdminSettings()
 
   const [testLoading, setTestLoading] = useState(false)
 
@@ -56,7 +55,7 @@ export function EmailSettings() {
 
   const mutation = useMutation({
     mutationFn: (f: typeof form) =>
-      updateSettings({
+      saveSettings({
         'email.enabled': String(f['email.enabled']),
         'email.host': f['email.host'],
         'email.port': f['email.port'],
@@ -84,6 +83,7 @@ export function EmailSettings() {
       </div>
 
       <Toggle
+        settingKey="email.enabled"
         checked={form['email.enabled']}
         onChange={(v) => setForm({ ...form, 'email.enabled': v })}
         label="E-Mail-Benachrichtigungen aktivieren"
@@ -94,6 +94,7 @@ export function EmailSettings() {
         <div className="grid grid-cols-3 gap-4">
           <div className="col-span-2">
             <Input
+              settingKey="email.host"
               label="SMTP Host"
               placeholder="smtp.gmail.com"
               value={form['email.host']}
@@ -101,6 +102,7 @@ export function EmailSettings() {
             />
           </div>
           <Input
+            settingKey="email.port"
             label="Port"
             type="number"
             value={form['email.port']}
@@ -109,6 +111,7 @@ export function EmailSettings() {
         </div>
 
         <Toggle
+          settingKey="email.secure"
           checked={form['email.secure']}
           onChange={(v) => setForm({ ...form, 'email.secure': v })}
           label="SSL/TLS verwenden (Port 465)"
@@ -117,12 +120,14 @@ export function EmailSettings() {
 
         <div className="grid grid-cols-2 gap-4">
           <Input
+            settingKey="email.user"
             label="SMTP-Benutzer"
             placeholder="user@gmail.com"
             value={form['email.user']}
             onChange={(e) => setForm({ ...form, 'email.user': e.target.value })}
           />
           <Input
+            settingKey="email.password"
             label="SMTP-Passwort"
             type="password"
             placeholder={settings?.['email.password']?.includes('•') ? 'Passwort gespeichert (versteckt)' : 'Passwort eingeben'}
@@ -132,6 +137,7 @@ export function EmailSettings() {
         </div>
 
         <Input
+          settingKey="email.from"
           label="Absenderadresse"
           type="email"
           placeholder="noreply@yourdomain.com"
@@ -151,7 +157,7 @@ export function EmailSettings() {
         >
           Test-E-Mail senden
         </Button>
-        <Button icon={<Save size={15} />} loading={mutation.isPending} onClick={() => mutation.mutate(form)}>
+        <Button icon={<Save size={15} />} loading={mutation.isPending} disabled={!canSave(Object.keys(form))} onClick={() => mutation.mutate(form)}>
           Änderungen speichern
         </Button>
       </div>

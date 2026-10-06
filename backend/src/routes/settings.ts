@@ -1,47 +1,27 @@
 import { withJob } from '../lib/jobs'
 import { Router } from 'express'
-import { validateSettingUpdates } from '../lib/settingsValidation'
+import { DEFAULT_SETTINGS } from '../lib/settingsDefaults'
+import {
+  applyEnvironmentSettings,
+  environmentSettings,
+  managedSettingKeys,
+  maskSecretSettings,
+  prepareSettingUpdates,
+} from '../lib/environmentSettings'
 import { prisma } from '../lib/prisma'
 import { requireAdmin, requireAuth } from '../middleware/auth'
 import { sendTestEmail } from '../services/email'
 import {
-  DEFAULT_S3_SETTINGS,
   reloadStorageConfig,
   testS3Connection,
 } from '../lib/minio'
 
 const router = Router()
 
-export const DEFAULT_SETTINGS: Record<string, string> = {
-  'app.name': 'ShareDrive',
-  'app.baseUrl': 'http://localhost',
-  'app.description': 'Fast, secure & beautiful file sharing',
-  'app.maxFilesPerTransfer': '100',
-  'storage.maxFileSizeBytes': '5368709120',
-  'storage.maxTransferSizeBytes': '10737418240',
-  'storage.userStorageQuotaBytes': '0',
-  'storage.retentionDaysAnonymous': '7',
-  'storage.retentionDaysRegistered': '30',
-  ...DEFAULT_S3_SETTINGS,
-  'email.enabled': 'false',
-  'email.host': '',
-  'email.port': '587',
-  'email.secure': 'false',
-  'email.user': '',
-  'email.password': '',
-  'email.from': 'noreply@sharedrive.local',
-  'security.registrationEnabled': 'true',
-  'security.requireEmailVerification': 'false',
-  'security.virusScanEnabled': 'true',
-  'appearance.primaryColor': '#6366f1',
-  'appearance.logoUrl': '',
-  'appearance.faviconUrl': '',
-  'privacy.logRetentionDays': '30',
-  'legal.privacyPolicy': '',
-  'legal.imprint': '',
-}
+export { DEFAULT_SETTINGS } from '../lib/settingsDefaults'
 
 export async function getSetting(key: string): Promise<string> {
+  if (environmentSettings[key] !== undefined) return environmentSettings[key]
   const setting = await prisma.setting.findUnique({ where: { key } })
   return setting?.value ?? DEFAULT_SETTINGS[key] ?? ''
 }
@@ -52,17 +32,13 @@ export async function getSettings(): Promise<Record<string, string>> {
   for (const s of settings) {
     result[s.key] = s.value
   }
-  return result
+  return applyEnvironmentSettings(result)
 }
 
 router.get('/', requireAdmin, async (req, res, next) => {
   try {
     const settings = await getSettings()
-    // Mask password/secret fields for security
-    const safe = { ...settings }
-    if (safe['email.password']) safe['email.password'] = '••••••••'
-    if (safe['storage.s3SecretKey']) safe['storage.s3SecretKey'] = '••••••••'
-    res.json({ settings: safe })
+    res.json({ settings: maskSecretSettings(settings), managedKeys: managedSettingKeys })
   } catch (err) {
     next(err)
   }
@@ -76,7 +52,7 @@ router.put('/', requireAdmin, async (req, res, next) => {
         ...DEFAULT_SETTINGS,
         ...Object.fromEntries(rows.map((r) => [r.key, r.value])),
       }
-      const values = validateSettingUpdates(req.body.settings, current)
+      const values = prepareSettingUpdates(req.body.settings, current)
       for (const [key, value] of Object.entries(values))
         await tx.setting.upsert({
           where: { key },

@@ -1,5 +1,5 @@
 import { prisma } from '../lib/prisma'
-import { DEFAULT_SETTINGS } from '../routes/settings'
+import { DEFAULT_SETTINGS } from '../lib/settingsDefaults'
 
 export async function seedSettings(): Promise<void> {
   for (const [key, value] of Object.entries(DEFAULT_SETTINGS)) {

@@ -45,9 +45,61 @@ First initialization generates infrastructure credentials in root-owned private
 starts preserve those credentials; do not remove or replace the secrets file over
 existing data. Read the host appdata `.setup/token` locally to complete the normal
 setup wizard. The token and passwords are not printed to container logs.
+
+Read the token in the Unraid terminal after initial startup:
+
+```bash
+cat /mnt/user/appdata/sharedrive-aio/.setup/token
+```
+
+Use your configured host **Appdata** path if different. For a running container,
+`docker exec ShareDrive-AIO cat /data/.setup/token` reads the same token; adjust the
+container name if renamed. Keep it private. The setup endpoint refuses access once
+the installation has an administrator; this is not a permanent administration token.
+
 Configure `TRUST_PROXY` in DockerMan for the actual connecting reverse proxy and
 optionally set `SMTP_ALLOWED_HOSTS`. TLS remains in your existing external proxy.
 Use **Edit -> Apply** to load changes to template environment variables.
+
+### AIO application settings
+
+The DockerMan template exposes every application setting using the canonical
+`backend/src/lib/environmentSettings.json` mapping. This includes names/public URL,
+file counts and upload/transfer sizes, storage quotas and retention, SMTP,
+registration/email verification, virus scanning, branding, audit retention,
+privacy policy/imprint and external S3. Select **Advanced View** for settings beyond
+the public URL and file/transfer limits. Boolean dropdowns offer an empty choice,
+`true` and `false`; the empty choice keeps the setting managed in web administration.
+
+All optional fields are empty initially, so importing the template does not reset
+existing application settings. Nonempty `SHAREDRIVE_*` values override database
+values at runtime, are validated on startup and are read-only in web administration.
+Overrides never replace database rows. Clear a template value and use **Edit -> Apply**
+to restore its previous web-admin value/default. Docker restart alone does not load
+new environment values. Invalid combinations (such as file limit above transfer
+limit, or email verification without enabled SMTP) must be corrected in the
+template before the app can start.
+
+Size limits are integer **MiB**: one MiB is 1048576 bytes, 5120 MiB is 5 GiB and
+10240 MiB is 10 GiB. File and transfer limits allow 1-81920 MiB; the file limit must
+not exceed the transfer limit. A user quota of 0 means unlimited. The descriptions
+in the XML document the other ranges and application defaults. Set matching upload
+limits/timeouts in the external reverse proxy yourself; the app cannot configure it.
+
+Updating the downloaded default XML does not merge new fields into an existing
+container's user template. After updating the AIO image, add the desired variables
+in DockerMan's **Edit -> Add another Path, Port, Variable, Label or Device -> Variable**
+with the XML's exact `Target` name, then apply. Alternatively, select the refreshed
+default template and retain the existing container name, appdata and networking;
+never run two containers against the same appdata. Older images ignore these
+application-setting variables.
+
+SMTP passwords and external S3 secret keys have masked controls, but masking is
+not encryption: Docker environment inspection and Unraid's saved user-template XML
+still contain the values. Protect flash backups and Docker access. There are no
+template fields for generated internal credentials or the setup token. External S3
+overrides change the storage backend, not existing object locations; plan migration
+and verify old downloads before switching.
 
 ### AIO updates and recovery
 

@@ -1,9 +1,8 @@
 import { useState, useEffect } from 'react'
-import { useQuery, useMutation } from '@tanstack/react-query'
+import { useMutation } from '@tanstack/react-query'
 import { Save, Lock, ShieldAlert } from 'lucide-react'
-import { getAllSettings, updateSettings } from '@/api/settings'
 import { Button } from '@/components/ui/Button'
-import { Toggle } from '@/components/ui/Toggle'
+import { ManagedToggle as Toggle, useAdminSettings } from './ManagedSettings'
 import { Spinner } from '@/components/ui/Spinner'
 import toast from 'react-hot-toast'
 
@@ -14,7 +13,7 @@ const isInsecureConnection =
   !['localhost', '127.0.0.1', '[::1]'].includes(window.location.hostname)
 
 export function SecuritySettings() {
-  const { data: settings, isLoading } = useQuery({ queryKey: ['admin-settings'], queryFn: getAllSettings })
+  const { settings, isLoading, saveSettings, canSave } = useAdminSettings()
 
   const [form, setForm] = useState({
     registrationEnabled: true,
@@ -34,7 +33,7 @@ export function SecuritySettings() {
 
   const mutation = useMutation({
     mutationFn: (f: typeof form) =>
-      updateSettings({
+      saveSettings({
         'security.registrationEnabled': String(f.registrationEnabled),
         'security.requireEmailVerification': String(f.requireEmailVerification),
         'security.virusScanEnabled': String(f.virusScanEnabled),
@@ -74,6 +73,7 @@ export function SecuritySettings() {
       <div className="space-y-4">
         <div className="p-4 bg-bg-elevated rounded-xl border border-border">
           <Toggle
+            settingKey="security.registrationEnabled"
             checked={form.registrationEnabled}
             onChange={(v) => setForm({ ...form, registrationEnabled: v })}
             label="Registrierung erlauben"
@@ -83,6 +83,7 @@ export function SecuritySettings() {
 
         <div className="p-4 bg-bg-elevated rounded-xl border border-border">
           <Toggle
+            settingKey="security.requireEmailVerification"
             checked={form.requireEmailVerification}
             onChange={(v) => setForm({ ...form, requireEmailVerification: v })}
             label="E-Mail-Verifizierung erforderlich"
@@ -92,6 +93,7 @@ export function SecuritySettings() {
 
         <div className="p-4 bg-bg-elevated rounded-xl border border-border">
           <Toggle
+            settingKey="security.virusScanEnabled"
             checked={form.virusScanEnabled}
             onChange={(v) => setForm({ ...form, virusScanEnabled: v })}
             label="Virenscan (ClamAV)"
@@ -101,7 +103,7 @@ export function SecuritySettings() {
       </div>
 
       <div className="flex justify-end pt-2 border-t border-border">
-        <Button icon={<Save size={15} />} loading={mutation.isPending} onClick={() => mutation.mutate(form)}>
+        <Button icon={<Save size={15} />} loading={mutation.isPending} disabled={!canSave(['security.registrationEnabled', 'security.requireEmailVerification', 'security.virusScanEnabled'])} onClick={() => mutation.mutate(form)}>
           Änderungen speichern
         </Button>
       </div>

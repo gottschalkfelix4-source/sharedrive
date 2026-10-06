@@ -17,8 +17,15 @@ cleanup() {
 trap cleanup EXIT
 docker volume create "$volume" >/dev/null
 start() {
+  local settings=()
+  if [[ ${AIO_TEST_SETTINGS:-managed} == managed ]]; then
+    settings=(-e 'SHAREDRIVE_APP_NAME=AIO managed fixture'
+      -e SHAREDRIVE_MAX_FILE_SIZE_MIB=1 -e SHAREDRIVE_MAX_TRANSFER_SIZE_MIB=2
+      -e SHAREDRIVE_USER_STORAGE_QUOTA_MIB=3 -e SHAREDRIVE_REGISTRATION_ENABLED=false
+      -e SHAREDRIVE_SMTP_PASSWORD=aio-test-smtp-fixture -e SHAREDRIVE_S3_SECRET_KEY=aio-test-s3-fixture)
+  fi
   docker run -d --name "$name" --network bridge --memory 6g --stop-timeout 120 \
-    -p 127.0.0.1::3000 --mount "type=volume,src=$volume,dst=/data,volume-nocopy" "$image" >/dev/null
+    -p 127.0.0.1::3000 "${settings[@]}" --mount "type=volume,src=$volume,dst=/data,volume-nocopy" "$image" >/dev/null
 }
 wait_healthy() {
   for ((attempt=0; attempt<180; attempt++)); do
@@ -80,5 +87,11 @@ edit_data "require('fs').renameSync('/data/config/secrets.saved', '/data/config/
 start
 wait_healthy
 api_test recreate
+docker stop --time 120 "$name" >/dev/null
+[[ $(docker inspect --format '{{.State.ExitCode}}' "$name") == 0 ]]
+docker rm -v "$name" >/dev/null
+AIO_TEST_SETTINGS=unmanaged start
+wait_healthy
+api_test unmanaged
 failed=0
-printf 'AIO first-run, antivirus, persistence, locking and unsafe-start refusal checks passed.\n'
+printf 'AIO first-run, settings overrides, antivirus, persistence, locking and unsafe-start refusal checks passed.\n'

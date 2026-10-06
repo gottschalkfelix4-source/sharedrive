@@ -6,7 +6,8 @@ import { chunkedUploadRouter } from './routes/chunkedUpload'
 import { transfersRouter } from './routes/transfers'
 import { downloadRouter } from './routes/download'
 import { adminRouter } from './routes/admin'
-import { settingsRouter } from './routes/settings'
+import { getSettings, settingsRouter } from './routes/settings'
+import { validateEffectiveSettings } from './lib/settingsValidation'
 import { scanRouter } from './routes/scan'
 import { setupRouter } from './routes/setup'
 import { assetsRouter } from './routes/assets'
@@ -101,6 +102,11 @@ async function start() {
     setupToken()
     await ensureBucket()
     await seedSettings()
+    try {
+      validateEffectiveSettings(await getSettings())
+    } catch {
+      throw new Error('Invalid effective application settings; check deployment variables and saved settings')
+    }
     await warnIfInsecureDefaults()
     const stopCleanup = startCleanupService()
     const stopScans = startScanWorker()

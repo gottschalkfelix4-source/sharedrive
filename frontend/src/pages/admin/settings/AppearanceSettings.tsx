@@ -1,7 +1,8 @@
 import { useState, useEffect, useRef } from 'react'
-import { useQuery, useMutation, useQueryClient } from '@tanstack/react-query'
+import { useMutation, useQueryClient } from '@tanstack/react-query'
 import { Save, Palette, Upload, X, Image } from 'lucide-react'
-import { getAllSettings, updateSettings, uploadAsset, deleteAsset } from '@/api/settings'
+import { uploadAsset, deleteAsset } from '@/api/settings'
+import { ManagedStatus, useAdminSettings } from './ManagedSettings'
 import { Button } from '@/components/ui/Button'
 import { Spinner } from '@/components/ui/Spinner'
 import toast from 'react-hot-toast'
@@ -22,6 +23,7 @@ function ImageUpload({
   type,
   onUploaded,
   onDeleted,
+  disabled,
 }: {
   label: string
   hint: string
@@ -29,6 +31,7 @@ function ImageUpload({
   type: 'logo' | 'favicon'
   onUploaded: (url: string) => void
   onDeleted: () => void
+  disabled: boolean
 }) {
   const inputRef = useRef<HTMLInputElement>(null)
   const [uploading, setUploading] = useState(false)
@@ -36,6 +39,7 @@ function ImageUpload({
   const [dragOver, setDragOver] = useState(false)
 
   const handleFile = async (file: File) => {
+    if (disabled) return
     if (!file.type.startsWith('image/')) {
       toast.error('Nur Bilddateien sind erlaubt')
       return
@@ -57,6 +61,7 @@ function ImageUpload({
   }
 
   const handleDelete = async () => {
+    if (disabled) return
     setDeleting(true)
     try {
       await deleteAsset(type)
@@ -72,6 +77,7 @@ function ImageUpload({
   return (
     <div>
       <label className="text-sm font-medium text-text-secondary block mb-2">{label}</label>
+      <ManagedStatus settingKey={`appearance.${type}Url`} />
       <p className="text-xs text-text-muted mb-3">{hint}</p>
 
       <div className="flex items-start gap-4">
@@ -91,13 +97,14 @@ function ImageUpload({
 
         {/* Drop zone */}
         <div
-          className={`flex-1 border-2 border-dashed rounded-xl p-4 text-center transition-colors cursor-pointer ${
+          aria-disabled={disabled}
+          className={`flex-1 border-2 border-dashed rounded-xl p-4 text-center transition-colors ${disabled ? 'opacity-50 cursor-not-allowed' : 'cursor-pointer'} ${
             dragOver
               ? 'border-primary bg-primary/5'
               : 'border-border hover:border-border-strong hover:bg-white/[0.02]'
           }`}
-          onClick={() => inputRef.current?.click()}
-          onDragOver={(e) => { e.preventDefault(); setDragOver(true) }}
+          onClick={() => { if (!disabled) inputRef.current?.click() }}
+          onDragOver={(e) => { e.preventDefault(); if (!disabled) setDragOver(true) }}
           onDragLeave={() => setDragOver(false)}
           onDrop={(e) => {
             e.preventDefault()
@@ -115,7 +122,7 @@ function ImageUpload({
             <>
               <Upload size={18} className="text-text-muted mx-auto mb-1" />
               <p className="text-sm text-text-secondary">
-                {value ? 'Bild ersetzen' : 'Klicken oder ablegen'}
+                {disabled ? 'Ueber Docker verwaltet' : value ? 'Bild ersetzen' : 'Klicken oder ablegen'}
               </p>
               <p className="text-xs text-text-muted mt-0.5">PNG, JPG, SVG, ICO — max 2 MB</p>
             </>
@@ -129,6 +136,7 @@ function ImageUpload({
             size="sm"
             icon={<X size={14} />}
             loading={deleting}
+            disabled={disabled}
             onClick={handleDelete}
             title={`Remove ${label}`}
           />
@@ -138,6 +146,7 @@ function ImageUpload({
       <input
         ref={inputRef}
         type="file"
+        disabled={disabled}
         accept="image/*"
         className="hidden"
         onChange={(e) => {
@@ -152,7 +161,7 @@ function ImageUpload({
 
 export function AppearanceSettings() {
   const queryClient = useQueryClient()
-  const { data: settings, isLoading } = useQuery({ queryKey: ['admin-settings'], queryFn: getAllSettings })
+  const { settings, isLoading, saveSettings, isManaged } = useAdminSettings()
 
   const [color, setColor] = useState('#6366f1')
   const [logoUrl, setLogoUrl] = useState('')
@@ -167,7 +176,7 @@ export function AppearanceSettings() {
   }, [settings])
 
   const mutation = useMutation({
-    mutationFn: () => updateSettings({ 'appearance.primaryColor': color }),
+    mutationFn: () => saveSettings({ 'appearance.primaryColor': color }),
     onSuccess: () => {
       queryClient.invalidateQueries({ queryKey: ['admin-settings'] })
       toast.success('Einstellungen gespeichert')
@@ -193,11 +202,13 @@ export function AppearanceSettings() {
         {/* Color picker */}
         <div>
           <label className="text-sm font-medium text-text-secondary block mb-3">Primärfarbe</label>
+          <ManagedStatus settingKey="appearance.primaryColor" />
           <div className="flex items-center gap-3 flex-wrap">
             {presetColors.map((c) => (
               <button
                 key={c.value}
                 type="button"
+                disabled={isManaged('appearance.primaryColor')}
                 onClick={() => setColor(c.value)}
                 className={`w-9 h-9 rounded-xl transition-all duration-200 ${
                   color === c.value
@@ -211,6 +222,8 @@ export function AppearanceSettings() {
             <div className="flex items-center gap-2">
               <input
                 type="color"
+                aria-label="Primaerfarbe"
+                disabled={isManaged('appearance.primaryColor')}
                 value={color}
                 onChange={(e) => setColor(e.target.value)}
                 className="w-9 h-9 rounded-xl border border-border cursor-pointer bg-transparent"
@@ -244,6 +257,7 @@ export function AppearanceSettings() {
           hint="Wird in der Navbar angezeigt. Ersetzt das Text-Logo. Empfohlen: PNG oder SVG, mind. 120 px hoch."
           value={logoUrl}
           type="logo"
+          disabled={isManaged('appearance.logoUrl')}
           onUploaded={(url) => setLogoUrl(url)}
           onDeleted={() => setLogoUrl('')}
         />
@@ -254,13 +268,14 @@ export function AppearanceSettings() {
           hint="Browser-Tab-Icon. Empfohlen: ICO, PNG oder SVG, 32×32 px."
           value={faviconUrl}
           type="favicon"
+          disabled={isManaged('appearance.faviconUrl')}
           onUploaded={(url) => setFaviconUrl(url)}
           onDeleted={() => setFaviconUrl('')}
         />
       </div>
 
       <div className="flex justify-end pt-2 border-t border-border">
-        <Button icon={<Save size={15} />} loading={mutation.isPending} onClick={() => mutation.mutate()}>
+        <Button icon={<Save size={15} />} loading={mutation.isPending} disabled={isManaged('appearance.primaryColor')} onClick={() => mutation.mutate()}>
           Farbe speichern
         </Button>
       </div>

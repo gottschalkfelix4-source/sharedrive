@@ -7,8 +7,17 @@ export async function getPublicSettings(): Promise<PublicSettings> {
 }
 
 export async function getAllSettings(): Promise<AllSettings> {
+  return (await getAdminSettings()).settings
+}
+
+export interface AdminSettingsResponse {
+  settings: AllSettings
+  managedKeys?: string[]
+}
+
+export async function getAdminSettings(): Promise<AdminSettingsResponse> {
   const res = await api.get('/settings')
-  return res.data.settings
+  return res.data
 }
 
 export async function updateSettings(
