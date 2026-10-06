@@ -14,34 +14,6 @@ from unittest.mock import patch
 spec = importlib.util.spec_from_file_location('aio_entrypoint', Path(__file__).with_name('entrypoint.py'))
 runtime = importlib.util.module_from_spec(spec)
 spec.loader.exec_module(runtime)
-service_spec = importlib.util.spec_from_file_location('aio_service', Path(__file__).with_name('service.py'))
-service = importlib.util.module_from_spec(service_spec)
-service_spec.loader.exec_module(service)
-
-
-class SettingEnvironmentTests(unittest.TestCase):
-    def test_only_explicit_nonempty_mapped_settings_are_forwarded(self):
-        mappings = [{'key': 'app.name', 'env': 'SHAREDRIVE_APP_NAME'},
-                    {'key': 'email.password', 'env': 'SHAREDRIVE_SMTP_PASSWORD'},
-                    {'key': 'email.enabled', 'env': 'SHAREDRIVE_SMTP_ENABLED'}]
-        source = {'SHAREDRIVE_APP_NAME': 'Custom name', 'SHAREDRIVE_SMTP_PASSWORD': '',
-                  'SHAREDRIVE_SMTP_ENABLED': 'false', 'SHAREDRIVE_UNKNOWN': 'ignored',
-                  'MINIO_SECRET_KEY': 'internal', 'PGPASSWORD': 'internal'}
-        with tempfile.TemporaryDirectory() as directory:
-            mapping_file = Path(directory) / 'settings.json'
-            mapping_file.write_text(json.dumps(mappings))
-            with patch.object(service, 'SETTINGS_MAP', mapping_file):
-                self.assertEqual(service.app_setting_environment(source),
-                                 {'SHAREDRIVE_APP_NAME': 'Custom name',
-                                  'SHAREDRIVE_SMTP_ENABLED': 'false'})
-
-    def test_nonempty_whitespace_is_preserved_for_backend_validation(self):
-        with tempfile.TemporaryDirectory() as directory:
-            mapping_file = Path(directory) / 'settings.json'
-            mapping_file.write_text('[{"key":"app.name","env":"SHAREDRIVE_APP_NAME"}]')
-            with patch.object(service, 'SETTINGS_MAP', mapping_file):
-                self.assertEqual(service.app_setting_environment({'SHAREDRIVE_APP_NAME': '  '}),
-                                 {'SHAREDRIVE_APP_NAME': '  '})
 
 
 class RuntimeTests(unittest.TestCase):

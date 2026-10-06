@@ -79,42 +79,8 @@ grep -q 'Target="SMTP_ALLOWED_HOSTS"' "$template"
 grep -q -- '--stop-timeout=120' "$template"
 [[ $(grep -c 'Type="Port"' "$template") -eq 1 ]]
 [[ $(grep -c 'Type="Path"' "$template") -eq 1 ]]
-if grep -Eq 'docker.sock|--env-file|Target="(JWT_SECRET|DATABASE_URL|REDIS_URL|MINIO_SECRET_KEY|SETUP_TOKEN_FILE)"|--privileged' "$template"; then
+if grep -Eq 'docker.sock|--env-file|Target="[^"]*(PASSWORD|SECRET)|--privileged' "$template"; then
   printf 'AIO template exposes external infrastructure or secrets.\n' >&2
   exit 1
 fi
-python3 - "$repo_dir" <<'PY'
-import json
-import sys
-import xml.etree.ElementTree as ET
-from pathlib import Path
-
-repo = Path(sys.argv[1])
-mapping = json.loads((repo / 'backend/src/lib/environmentSettings.json').read_text())
-expected = {entry['env'] for entry in mapping}
-assert len(expected) == len(mapping) == 33
-always = {'SHAREDRIVE_BASE_URL', 'SHAREDRIVE_MAX_FILE_SIZE_MIB', 'SHAREDRIVE_MAX_TRANSFER_SIZE_MIB'}
-masked = {'SHAREDRIVE_SMTP_PASSWORD', 'SHAREDRIVE_S3_SECRET_KEY'}
-booleans = {'SHAREDRIVE_SMTP_ENABLED', 'SHAREDRIVE_SMTP_SECURE',
-            'SHAREDRIVE_REGISTRATION_ENABLED', 'SHAREDRIVE_REQUIRE_EMAIL_VERIFICATION',
-            'SHAREDRIVE_VIRUS_SCAN_ENABLED', 'SHAREDRIVE_S3_ENABLED', 'SHAREDRIVE_S3_USE_SSL'}
-for filename in ['sharedrive-aio.xml', 'sharedrive-backend.xml']:
-    root = ET.parse(repo / 'unraid/templates' / filename).getroot()
-    controls = [item for item in root.findall('Config')
-                if item.get('Target', '').startswith('SHAREDRIVE_')]
-    assert {item.get('Target') for item in controls} == expected, filename
-    assert len(controls) == len(expected), filename
-    for item in controls:
-        env = item.get('Target')
-        assert item.get('Type') == 'Variable' and item.get('Required') == 'false', env
-        assert not (item.text or '').strip(), env
-        assert item.get('Default') == ('|true|false' if env in booleans else ''), env
-        assert item.get('Mask') == ('true' if env in masked else 'false'), env
-        assert item.get('Display') == ('always' if env in always else 'advanced'), env
-        assert 'default:' in item.get('Description', '').lower(), env
-for item in mapping:
-    if item['env'].endswith('_MIB'):
-        assert item['multiplier'] == 1048576
-print('All 33 optional settings match both templates and the canonical mapping.')
-PY
 printf 'AIO template helper checks passed.\n'

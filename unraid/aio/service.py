@@ -11,13 +11,6 @@ import urllib.request
 from pathlib import Path
 
 PG_BIN = '/usr/lib/postgresql/16/bin'
-SETTINGS_MAP = Path('/opt/sharedrive/aio/environment-settings.json')
-
-
-def app_setting_environment(source):
-    mappings = json.loads(SETTINGS_MAP.read_text())
-    return {mapping['env']: source[mapping['env']] for mapping in mappings
-            if source.get(mapping['env'], '') != ''}
 
 
 def wait_for(callback, description):
@@ -122,7 +115,6 @@ def launch(service):
         )
         if os.environ.get('SMTP_ALLOWED_HOSTS'):
             environment['SMTP_ALLOWED_HOSTS'] = os.environ['SMTP_ALLOWED_HOSTS']
-        environment.update(app_setting_environment(os.environ))
         os.chdir('/app')
         subprocess.run(['gosu', 'node', '/app/node_modules/.bin/prisma', 'migrate', 'deploy'],
                        env=environment, check=True)

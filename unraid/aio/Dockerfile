@@ -33,7 +33,6 @@ COPY --from=minio /usr/local/bin/minio /usr/local/bin/minio
 COPY --from=minio /usr/share/doc/minio/LICENSE /usr/share/doc/minio/LICENSE
 COPY --from=clamav-seed /var/lib/clamav/*.cvd /opt/sharedrive/clamav-seed/
 COPY LICENSE /usr/share/doc/sharedrive/LICENSE
-COPY backend/src/lib/environmentSettings.json /opt/sharedrive/aio/environment-settings.json
 COPY unraid/aio/entrypoint.sh unraid/aio/entrypoint.py unraid/aio/service.py \
      unraid/aio/healthcheck.py unraid/aio/healthcheck.sh \
      unraid/aio/supervisord.conf unraid/aio/clamd.conf unraid/aio/freshclam.conf /opt/sharedrive/aio/

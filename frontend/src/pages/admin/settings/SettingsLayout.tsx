@@ -1,7 +1,6 @@
 import { Link, useLocation, Outlet } from 'react-router-dom'
 import { Settings, HardDrive, Mail, Lock, Palette, ShieldCheck, ChevronRight } from 'lucide-react'
 import { cn } from '@/lib/utils'
-import { ManagedSettingsProvider } from './ManagedSettings'
 
 const settingsNav = [
   { to: '/admin/settings', label: 'Allgemein', icon: <Settings size={16} />, exact: true, desc: 'App-Name, Beschreibung' },
@@ -58,7 +57,7 @@ export function SettingsLayout() {
 
         {/* Settings content */}
         <div className="flex-1 min-w-0">
-          <ManagedSettingsProvider><Outlet /></ManagedSettingsProvider>
+          <Outlet />
         </div>
       </div>
     </div>

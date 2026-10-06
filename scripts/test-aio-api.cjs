@@ -43,60 +43,6 @@ async function login() {
   assert.equal(response.status, 200);
   assert.match(response.headers.get('set-cookie'), /HttpOnly/);
   assert.equal((await response.json()).user.role, 'ADMIN');
-  const token = response.headers.getSetCookie().find((cookie) => cookie.startsWith('token='));
-  assert.ok(token);
-  return { authorization: `Bearer ${decodeURIComponent(token.split(';')[0].slice('token='.length))}` };
-}
-
-async function settingsTest(phase) {
-  const headers = { ...await login(), 'content-type': 'application/json' };
-  const { settings, managedKeys } = await json('/settings', { headers });
-  const publicSettings = await json('/settings/public');
-  const managed = phase !== 'unmanaged';
-  assert.equal(publicSettings.appName, managed ? 'AIO managed fixture' : 'ShareDrive');
-  assert.equal(publicSettings.maxFileSizeBytes, managed ? 1048576 : 5368709120);
-  assert.equal(publicSettings.maxTransferSizeBytes, managed ? 2097152 : 10737418240);
-  assert.equal(publicSettings.userStorageQuotaBytes, managed ? 3145728 : 0);
-  assert.equal(publicSettings.registrationEnabled, !managed);
-  assert.equal(publicSettings.logoUrl, managed ? 'https://example.com/aio-fixture-logo.png' : '');
-  for (const name of ['email.password', 'storage.s3SecretKey']) {
-    assert.equal(settings[name], managed ? '\u2022'.repeat(8) : '');
-    assert.equal(publicSettings[name], undefined);
-  }
-  assert.equal(settings['app.description'], phase === 'initial'
-    ? 'Fast, secure & beautiful file sharing' : 'Persistent admin fixture');
-  assert.deepEqual([...managedKeys].sort(), managed ? [
-    'app.name', 'storage.maxFileSizeBytes', 'storage.maxTransferSizeBytes',
-    'storage.userStorageQuotaBytes', 'security.registrationEnabled',
-    'email.password', 'storage.s3SecretKey', 'appearance.logoUrl',
-  ].sort() : []);
-  if (phase === 'initial') {
-    await json('/settings', { method: 'PUT', headers,
-      body: JSON.stringify({ settings: { 'app.name': 'Cannot replace Docker value' } }),
-    }, 400);
-    await json('/settings', { method: 'PUT', headers,
-      body: JSON.stringify({ settings: {
-        'app.description': 'Persistent admin fixture', 'app.name': settings['app.name'],
-        'email.password': settings['email.password'], 'storage.s3SecretKey': settings['storage.s3SecretKey'],
-      } }),
-    });
-    const changed = await json('/settings', { headers });
-    assert.equal(changed.settings['app.description'], 'Persistent admin fixture');
-    assert.equal(changed.settings['app.name'], 'AIO managed fixture');
-    const image = new FormData();
-    image.append('file', new Blob([Buffer.from([137, 80, 78, 71, 13, 10, 26, 10])],
-      { type: 'image/png' }), 'fixture.png');
-    const upload = await fetch(`${root}/assets/upload?type=logo`, { method: 'POST',
-      headers: { authorization: headers.authorization }, body: image });
-    assert.equal(upload.status, 400);
-    assert.match((await upload.json()).error, /managed by the deployment environment/);
-    const deletion = await json('/assets/logo', { method: 'DELETE', headers }, 400);
-    assert.match(deletion.error, /managed by the deployment environment/);
-    const oversized = new FormData();
-    oversized.append('file', new Blob([Buffer.alloc(1048577)], { type: 'text/plain' }), 'too-large.txt');
-    const response = await fetch(`${root}/transfers`, { method: 'POST', body: oversized });
-    assert.equal(response.status, 413, 'Docker-managed file limit must reject oversized uploads');
-  }
 }
 
 function secretHash() {
@@ -168,7 +114,7 @@ async function main() {
     await scanUpload(eicar, 'antivirus-fixture.txt', 'infected');
     fs.writeFileSync(fixturePath, JSON.stringify({ shortId: published.shortId, secretHash: secretHash() }), { mode: 0o600 });
   } else {
-    assert.ok(['restart', 'recreate', 'unmanaged'].includes(phase));
+    assert.ok(['restart', 'recreate'].includes(phase));
     assert.equal((await json('/setup/status')).needsSetup, false);
     const fixture = JSON.parse(fs.readFileSync(fixturePath, 'utf8'));
     assert.equal(secretHash(), fixture.secretHash, 'Persistent credentials changed');
@@ -176,7 +122,6 @@ async function main() {
     await download(fixture.shortId);
   }
   assert.equal((await json('/setup/status')).needsSetup, false);
-  await settingsTest(phase);
   infrastructure();
   execFileSync('python3', ['/opt/sharedrive/aio/healthcheck.py'], { stdio: 'pipe' });
   console.log(`AIO ${phase}: admin, credentials, PostgreSQL, MinIO and scanner checks passed.`);

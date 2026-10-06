@@ -1,13 +1,14 @@
 import { useState, useEffect } from 'react'
-import { useMutation } from '@tanstack/react-query'
+import { useQuery, useMutation } from '@tanstack/react-query'
 import { Save, ShieldCheck } from 'lucide-react'
+import { getAllSettings, updateSettings } from '@/api/settings'
 import { Button } from '@/components/ui/Button'
-import { ManagedInput as Input, ManagedStatus, useAdminSettings } from './ManagedSettings'
+import { Input } from '@/components/ui/Input'
 import { Spinner } from '@/components/ui/Spinner'
 import toast from 'react-hot-toast'
 
 export function PrivacySettings() {
-  const { settings, isLoading, saveSettings, canSave, isManaged } = useAdminSettings()
+  const { data: settings, isLoading } = useQuery({ queryKey: ['admin-settings'], queryFn: getAllSettings })
 
   const [form, setForm] = useState({
     logRetentionDays: '30',
@@ -27,7 +28,7 @@ export function PrivacySettings() {
 
   const mutation = useMutation({
     mutationFn: (f: typeof form) =>
-      saveSettings({
+      updateSettings({
         'privacy.logRetentionDays': f.logRetentionDays,
         'legal.privacyPolicy': f.privacyPolicy,
         'legal.imprint': f.imprint,
@@ -52,7 +53,6 @@ export function PrivacySettings() {
 
       <div className="space-y-6">
         <Input
-          settingKey="privacy.logRetentionDays"
           label="Log-Aufbewahrung (Tage)"
           type="number"
           min="1"
@@ -67,14 +67,12 @@ export function PrivacySettings() {
             Datenschutzerklärung
           </label>
           <textarea
-            disabled={isManaged('legal.privacyPolicy')}
             rows={12}
             className="w-full rounded-xl border border-border bg-bg px-4 py-3 text-sm text-text-primary placeholder:text-text-muted focus:outline-none focus:ring-2 focus:ring-primary/50 resize-y font-mono"
             placeholder="Datenschutzerklärung hier eingeben…"
             value={form.privacyPolicy}
             onChange={(e) => setForm({ ...form, privacyPolicy: e.target.value })}
           />
-          <ManagedStatus settingKey="legal.privacyPolicy" />
           <p className="text-xs text-text-muted">Wird unter /datenschutz öffentlich angezeigt. Zeilenumbrüche werden erhalten.</p>
         </div>
 
@@ -83,20 +81,18 @@ export function PrivacySettings() {
             Impressum
           </label>
           <textarea
-            disabled={isManaged('legal.imprint')}
             rows={8}
             className="w-full rounded-xl border border-border bg-bg px-4 py-3 text-sm text-text-primary placeholder:text-text-muted focus:outline-none focus:ring-2 focus:ring-primary/50 resize-y font-mono"
             placeholder="Impressum hier eingeben…"
             value={form.imprint}
             onChange={(e) => setForm({ ...form, imprint: e.target.value })}
           />
-          <ManagedStatus settingKey="legal.imprint" />
           <p className="text-xs text-text-muted">Wird unter /impressum öffentlich angezeigt.</p>
         </div>
       </div>
 
       <div className="flex justify-end pt-2 border-t border-border">
-        <Button icon={<Save size={15} />} loading={mutation.isPending} disabled={!canSave(['privacy.logRetentionDays', 'legal.privacyPolicy', 'legal.imprint'])} onClick={() => mutation.mutate(form)}>
+        <Button icon={<Save size={15} />} loading={mutation.isPending} onClick={() => mutation.mutate(form)}>
           Änderungen speichern
         </Button>
       </div>

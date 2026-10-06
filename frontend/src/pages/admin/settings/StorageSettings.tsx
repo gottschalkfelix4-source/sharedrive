@@ -1,9 +1,10 @@
 import { useState, useEffect } from 'react'
-import { useMutation } from '@tanstack/react-query'
+import { useQuery, useMutation } from '@tanstack/react-query'
 import { Save, HardDrive, Cloud, TestTube } from 'lucide-react'
-import { testS3Connection } from '@/api/settings'
+import { getAllSettings, updateSettings, testS3Connection } from '@/api/settings'
 import { Button } from '@/components/ui/Button'
-import { ManagedInput as Input, ManagedToggle as Toggle, useAdminSettings } from './ManagedSettings'
+import { Input } from '@/components/ui/Input'
+import { Toggle } from '@/components/ui/Toggle'
 import { Spinner } from '@/components/ui/Spinner'
 import { formatBytes } from '@/lib/utils'
 import toast from 'react-hot-toast'
@@ -12,7 +13,7 @@ function bytesToGB(bytes: string) { return (parseInt(bytes) / 1e9).toString() }
 function gbToBytes(gb: string) { return Math.round(parseFloat(gb) * 1e9).toString() }
 
 export function StorageSettings() {
-  const { settings, isLoading, saveSettings, canSave } = useAdminSettings()
+  const { data: settings, isLoading } = useQuery({ queryKey: ['admin-settings'], queryFn: getAllSettings })
 
   const [form, setForm] = useState({
     maxFileSizeGB: '5',
@@ -58,7 +59,7 @@ export function StorageSettings() {
 
   const mutation = useMutation({
     mutationFn: (f: typeof form) =>
-      saveSettings({
+      updateSettings({
         'storage.maxFileSizeBytes': gbToBytes(f.maxFileSizeGB),
         'storage.maxTransferSizeBytes': gbToBytes(f.maxTransferSizeGB),
         'storage.userStorageQuotaBytes': gbToBytes(f.userStorageQuotaGB),
@@ -71,7 +72,7 @@ export function StorageSettings() {
 
   const s3Mutation = useMutation({
     mutationFn: (f: typeof s3Form) =>
-      saveSettings({
+      updateSettings({
         'storage.s3Enabled': String(f.enabled),
         'storage.s3Endpoint': f.endpoint,
         'storage.s3Port': f.port,
@@ -127,7 +128,6 @@ export function StorageSettings() {
         <div className="space-y-6">
           <div className="grid grid-cols-2 gap-4">
             <Input
-              settingKey="storage.maxFileSizeBytes"
               label="Max. Dateigröße (GB)"
               type="number"
               min="0.1"
@@ -137,7 +137,6 @@ export function StorageSettings() {
               hint={`≈ ${formatBytes(gbToBytes(form.maxFileSizeGB))} pro Datei`}
             />
             <Input
-              settingKey="storage.maxTransferSizeBytes"
               label="Max. Transfergröße (GB)"
               type="number"
               min="0.1"
@@ -152,7 +151,6 @@ export function StorageSettings() {
             <h3 className="text-sm font-semibold text-text-primary mb-1">Speicherquota pro Nutzer</h3>
             <p className="text-xs text-text-muted mb-3">Wird im Dashboard als Prozentbalken angezeigt. 0 = kein Limit (kein Balken).</p>
             <Input
-              settingKey="storage.userStorageQuotaBytes"
               label="Quota pro Nutzer (GB)"
               type="number"
               min="0"
@@ -167,7 +165,6 @@ export function StorageSettings() {
             <h3 className="text-sm font-semibold text-text-primary mb-3">Aufbewahrungsrichtlinie</h3>
             <div className="grid grid-cols-2 gap-4">
               <Input
-                settingKey="storage.retentionDaysAnonymous"
                 label="Anonyme Transfers (Tage)"
                 type="number"
                 min="1"
@@ -177,7 +174,6 @@ export function StorageSettings() {
                 hint="Dateien von nicht registrierten Benutzern"
               />
               <Input
-                settingKey="storage.retentionDaysRegistered"
                 label="Registrierte Benutzer (Tage)"
                 type="number"
                 min="1"
@@ -191,7 +187,7 @@ export function StorageSettings() {
         </div>
 
         <div className="flex justify-end pt-2 border-t border-border">
-          <Button icon={<Save size={15} />} loading={mutation.isPending} disabled={!canSave(['storage.maxFileSizeBytes', 'storage.maxTransferSizeBytes', 'storage.userStorageQuotaBytes', 'storage.retentionDaysAnonymous', 'storage.retentionDaysRegistered'])} onClick={() => mutation.mutate(form)}>
+          <Button icon={<Save size={15} />} loading={mutation.isPending} onClick={() => mutation.mutate(form)}>
             Änderungen speichern
           </Button>
         </div>
@@ -209,7 +205,6 @@ export function StorageSettings() {
         </div>
 
         <Toggle
-          settingKey="storage.s3Enabled"
           checked={s3Form.enabled}
           onChange={(v) => setS3Form({ ...s3Form, enabled: v })}
           label="Externen S3-Speicher verwenden"
@@ -220,7 +215,6 @@ export function StorageSettings() {
           <div className="grid grid-cols-3 gap-4">
             <div className="col-span-2">
               <Input
-                settingKey="storage.s3Endpoint"
                 label="Endpoint"
                 placeholder="s3.eu-central-1.amazonaws.com"
                 value={s3Form.endpoint}
@@ -228,7 +222,6 @@ export function StorageSettings() {
               />
             </div>
             <Input
-              settingKey="storage.s3Port"
               label="Port"
               type="number"
               value={s3Form.port}
@@ -237,7 +230,6 @@ export function StorageSettings() {
           </div>
 
           <Toggle
-            settingKey="storage.s3UseSSL"
             checked={s3Form.useSSL}
             onChange={(v) => setS3Form({ ...s3Form, useSSL: v })}
             label="SSL/TLS verwenden"
@@ -246,14 +238,12 @@ export function StorageSettings() {
 
           <div className="grid grid-cols-2 gap-4">
             <Input
-              settingKey="storage.s3Bucket"
               label="Bucket"
               placeholder="meine-firma-dateien"
               value={s3Form.bucket}
               onChange={(e) => setS3Form({ ...s3Form, bucket: e.target.value })}
             />
             <Input
-              settingKey="storage.s3Region"
               label="Region (optional)"
               placeholder="eu-central-1"
               value={s3Form.region}
@@ -263,13 +253,11 @@ export function StorageSettings() {
 
           <div className="grid grid-cols-2 gap-4">
             <Input
-              settingKey="storage.s3AccessKey"
               label="Access Key"
               value={s3Form.accessKey}
               onChange={(e) => setS3Form({ ...s3Form, accessKey: e.target.value })}
             />
             <Input
-              settingKey="storage.s3SecretKey"
               label="Secret Key"
               type="password"
               placeholder={settings?.['storage.s3SecretKey']?.includes('•') ? 'Gespeichert (versteckt)' : 'Secret Key eingeben'}
@@ -293,7 +281,7 @@ export function StorageSettings() {
           >
             Verbindung testen
           </Button>
-          <Button icon={<Save size={15} />} loading={s3Mutation.isPending} disabled={!canSave(['storage.s3Enabled', 'storage.s3Endpoint', 'storage.s3Port', 'storage.s3UseSSL', 'storage.s3Region', 'storage.s3Bucket', 'storage.s3AccessKey', 'storage.s3SecretKey'])} onClick={() => s3Mutation.mutate(s3Form)}>
+          <Button icon={<Save size={15} />} loading={s3Mutation.isPending} onClick={() => s3Mutation.mutate(s3Form)}>
             Änderungen speichern
           </Button>
         </div>

@@ -2,8 +2,6 @@ import * as Minio from 'minio'
 import { Readable } from 'stream'
 import { config } from '../config'
 import { prisma } from './prisma'
-import { DEFAULT_S3_SETTINGS } from './settingsDefaults'
-import { applyEnvironmentSettings } from './environmentSettings'
 
 // Default/local storage — always available, used as fallback and for site assets.
 export let minioClient = new Minio.Client({
@@ -15,7 +13,16 @@ export let minioClient = new Minio.Client({
 })
 
 // Admin-configurable external S3 storage — merged into routes/settings.ts's DEFAULT_SETTINGS.
-export { DEFAULT_S3_SETTINGS } from './settingsDefaults'
+export const DEFAULT_S3_SETTINGS: Record<string, string> = {
+  'storage.s3Enabled': 'false',
+  'storage.s3Endpoint': '',
+  'storage.s3Port': '443',
+  'storage.s3UseSSL': 'true',
+  'storage.s3Region': '',
+  'storage.s3Bucket': '',
+  'storage.s3AccessKey': '',
+  'storage.s3SecretKey': '',
+}
 
 interface ActiveStorage {
   client: Minio.Client
@@ -47,9 +54,8 @@ async function resolveActiveStorage(): Promise<ActiveStorage> {
   const rows = await prisma.setting.findMany({
     where: { key: { in: Object.keys(DEFAULT_S3_SETTINGS) } },
   })
-  const saved: Record<string, string> = { ...DEFAULT_S3_SETTINGS }
-  for (const r of rows) saved[r.key] = r.value
-  const s = applyEnvironmentSettings(saved)
+  const s: Record<string, string> = { ...DEFAULT_S3_SETTINGS }
+  for (const r of rows) s[r.key] = r.value
 
   if (
     s['storage.s3Enabled'] !== 'true' ||

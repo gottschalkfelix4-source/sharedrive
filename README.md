@@ -100,30 +100,6 @@ The template exposes one HTTP port, **8088 -> 3000**, and one persistent directo
 
 First startup generates private credentials in `/data/config/secrets.json` and a setup token in `/data/.setup/token`, initializes PostgreSQL and storage, applies migrations and loads bundled ClamAV signatures. These bundled signatures allow startup without an online signature download; FreshClam refreshes them in the background when connectivity permits. Allow several minutes for initial database/scanner startup. Read `/mnt/user/appdata/sharedrive-aio/.setup/token` locally, point your existing reverse proxy at `http://UNRAID-IP:8088`, then complete setup using your public HTTPS URL. Secrets and the setup token are not printed to logs.
 
-Read the **setup token in the Unraid terminal** after the first initialization:
-
-```bash
-cat /mnt/user/appdata/sharedrive-aio/.setup/token
-```
-
-If you changed the **Appdata** path, use that path instead. Alternatively, read it inside the running container (replace the name if you renamed it):
-
-```bash
-docker exec ShareDrive-AIO cat /data/.setup/token
-```
-
-Enter the displayed token in the setup wizard. Do not post it publicly. Setup closes once an admin exists; the token does not grant access to an already-configured installation.
-
-All application settings can also be configured in the **AIO DockerMan template**, including upload/transfer limits, quotas, retention, SMTP, registration and verification, scanning, branding, legal text, privacy and external S3. Public URL and upload/transfer limits are visible immediately; select DockerMan's **Advanced View** for the remaining fields. Size fields use integer **MiB**, not bytes: `5120` = 5 GiB and `10240` = 10 GiB. The individual field descriptions include valid ranges and application defaults. A reverse proxy's own upload/body-size limit remains a separate setting in that proxy.
-
-Application upload limits do not raise antivirus limits: bundled ClamAV has `6144M` stream/file/scan limits and rejects exceeded limits rather than marking oversized uploads clean. Keep plaintext files within scanner limits when scanning is enabled.
-
-Every optional application field starts **empty**. Empty means use the existing **Admin -> Settings** value, or the application default if no value was saved. A nonempty `SHAREDRIVE_*` value takes precedence and is shown as read-only in web administration. Use **Edit -> Apply** after changing values; restarting alone does not change a container's environment. Clear an optional value and apply to release it back to web administration: template values never overwrite the saved database settings.
-
-Downloading the XML again only updates the **default template**, not a running container's saved user template. Existing containers need the new variables added under **Edit -> Add another Path, Port, Variable, Label or Device -> Variable**, using the `Target` names in the XML, then **Apply**; alternatively use the refreshed default template while retaining the existing appdata path and container name. Do not initialize a second container against the same appdata. Update the AIO image as well: older images do not implement these optional settings.
-
-SMTP passwords and external S3 secret keys are masked in DockerMan, but remain available in Docker's environment and saved user-template XML. Protect your Unraid flash backups and Docker access. Generated database/Redis/MinIO/JWT credentials and the setup token are deliberately **not** template settings. Enabling external S3 does not migrate existing objects automatically.
-
 Enable **Autostart** and use Unraid's normal **Check for Updates / Update** action for this container. Updates restart all bundled services together; all data persists in appdata. **Stop the container and back up the entire AIO appdata directory before updating.** Keep the template's 120-second stop timeout. AIO uses PostgreSQL 16 and does not automatically upgrade database majors. See [AIO operations and recovery](docs/operations.md#unraid-all-in-one).
 
 This is a separate installation, not an automatic migration: **do not select existing Compose or DockerMan appdata**. Existing split deployments remain supported and unchanged.
@@ -170,7 +146,7 @@ For an older DockerMan installation, back up and stop its old Web and Backend co
 
 ## Configuration
 
-Application settings live in **Admin -> Settings**, with optional `SHAREDRIVE_*` overrides exposed by both DockerMan templates as described above. Separate-container infrastructure configuration stays in your private `.env`; AIO generates and preserves its own private `/data/config/secrets.json`. Never put credentials in Git or shared XML templates. AIO also accepts `TRUST_PROXY` and optional `SMTP_ALLOWED_HOSTS`; the remaining table describes the separate-container infrastructure deployment.
+Application settings live in **Admin -> Settings**. Separate-container infrastructure configuration stays in your private `.env`; AIO generates and preserves its own private `/data/config/secrets.json`. Never put credentials in Git or XML templates. AIO accepts `TRUST_PROXY` and optional `SMTP_ALLOWED_HOSTS` through DockerMan; the remaining table describes the separate-container deployment.
 
 | Variable | Purpose |
 | --- | --- |
@@ -245,17 +221,7 @@ For optional local image builds, from the repository root after preparing config
 docker compose -f docker-compose.yml -f docker-compose.build.yml up --build -d --wait --wait-timeout 900
 ```
 
-The override builds local `sharedrive:local` and `sharedrive-minio:local` images. Production Compose files contain no build instructions.
-
-To build AIO from the current source, explicitly pass the matching local application and MinIO images (the Dockerfile's pinned fallback application may predate new settings):
-
-```bash
-docker build -t sharedrive:local -f backend/Dockerfile .
-docker build -t sharedrive-minio:local -f unraid/Dockerfile.minio .
-docker build -t sharedrive-aio:local -f unraid/aio/Dockerfile --build-arg APP_IMAGE=sharedrive:local --build-arg MINIO_IMAGE=sharedrive-minio:local .
-```
-
-CI runs deployment, frontend, backend, real-storage and AIO checks; successful `master` builds publish the app, MinIO and AIO with `latest` and commit-specific tags. Published AIO builds always use the matching application image.
+The override builds local `sharedrive:local` and `sharedrive-minio:local` images. Production Compose files contain no build instructions. CI runs deployment, frontend, backend and real-storage integration checks; successful `master` builds publish the app and MinIO with `latest` and commit-specific tags.
 
 Run `npm test` and `npm run build` in each package. Browser and database/storage integration tests use isolated fixtures in [testing](docs/testing.md). The [German project review](docs/project-review.de.md) preserves the previous review and its validation boundaries; its proxy architecture is superseded.
 
