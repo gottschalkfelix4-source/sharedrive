@@ -1,21 +1,38 @@
 import { Link, useLocation, Outlet, Navigate } from 'react-router-dom'
 import { motion } from 'framer-motion'
 import {
-  LayoutDashboard, Files, Users, Settings, Shield, ChevronRight, Upload, ScrollText
+  LayoutDashboard,
+  Files,
+  Users,
+  Settings,
+  Shield,
+  ChevronRight,
+  Upload,
+  ScrollText,
 } from 'lucide-react'
 import { useAuthStore } from '@/store/authStore'
 import { cn } from '@/lib/utils'
 
 const navItems = [
-  { to: '/admin', label: 'Dashboard', icon: <LayoutDashboard size={17} />, exact: true },
+  {
+    to: '/admin',
+    label: 'Dashboard',
+    icon: <LayoutDashboard size={17} />,
+    exact: true,
+  },
   { to: '/admin/files', label: 'Dateien', icon: <Files size={17} /> },
   { to: '/admin/users', label: 'Benutzer', icon: <Users size={17} /> },
   { to: '/admin/logs', label: 'Protokoll', icon: <ScrollText size={17} /> },
-  { to: '/admin/settings', label: 'Einstellungen', icon: <Settings size={17} /> },
+  {
+    to: '/admin/settings',
+    label: 'Einstellungen',
+    icon: <Settings size={17} />,
+  },
 ]
 
 export function AdminLayout() {
   const { user, token } = useAuthStore()
+  const location = useLocation()
 
   // Token exists but user not yet loaded — wait
   if (token && !user) {
@@ -28,8 +45,6 @@ export function AdminLayout() {
 
   if (!user || user.role !== 'ADMIN') return <Navigate to="/" />
 
-  const location = useLocation()
-
   return (
     <div className="min-h-screen flex">
       {/* Sidebar */}
@@ -40,7 +55,9 @@ export function AdminLayout() {
               <Shield size={14} className="text-white" />
             </div>
             <div>
-              <p className="text-sm font-semibold text-text-primary">Admin-Bereich</p>
+              <p className="text-sm font-semibold text-text-primary">
+                Admin-Bereich
+              </p>
               <p className="text-xs text-text-muted">@{user.username}</p>
             </div>
           </div>
@@ -95,7 +112,9 @@ export function AdminLayout() {
                 to={item.to}
                 className={cn(
                   'flex items-center gap-1.5 px-3 py-1.5 rounded-lg text-sm whitespace-nowrap transition-colors',
-                  active ? 'bg-primary/15 text-primary' : 'text-text-secondary hover:bg-white/5'
+                  active
+                    ? 'bg-primary/15 text-primary'
+                    : 'text-text-secondary hover:bg-white/5'
                 )}
               >
                 {item.icon}

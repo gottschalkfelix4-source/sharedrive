@@ -11,7 +11,20 @@ export class AppError extends Error {
   }
 }
 
-export function errorHandler(err: Error, req: Request, res: Response, next: NextFunction): void {
+export function errorHandler(
+  err: Error,
+  req: Request,
+  res: Response,
+  next: NextFunction
+): void {
+  if (res.headersSent) {
+    res.destroy(err)
+    return
+  }
+  if ('status' in err && (err as { status: number }).status === 413) {
+    res.status(413).json({ error: 'Request body exceeds limit' })
+    return
+  }
   if (err instanceof AppError) {
     res.status(err.statusCode).json({ error: err.message })
     return
@@ -22,8 +35,12 @@ export function errorHandler(err: Error, req: Request, res: Response, next: Next
   }
   console.error('Unhandled error:', err)
   // Log unexpected errors asynchronously — import lazily to avoid circular deps
-  import('../services/logger').then(({ log }) => {
-    log('error', 'error', `${req.method} ${req.path} — ${err.message}`, { ip: req.ip }).catch(() => {})
-  }).catch(() => {})
+  import('../services/logger')
+    .then(({ log }) => {
+      log('error', 'error', `${req.method} ${req.path} — ${err.message}`, {
+        ip: req.ip,
+      }).catch(() => {})
+    })
+    .catch(() => {})
   res.status(500).json({ error: 'Internal server error' })
 }

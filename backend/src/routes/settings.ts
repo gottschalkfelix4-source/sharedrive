@@ -1,9 +1,14 @@
+import { withJob } from '../lib/jobs'
 import { Router } from 'express'
-import fs from 'fs'
+import { validateSettingUpdates } from '../lib/settingsValidation'
 import { prisma } from '../lib/prisma'
 import { requireAdmin, requireAuth } from '../middleware/auth'
 import { sendTestEmail } from '../services/email'
-import { DEFAULT_S3_SETTINGS, reloadStorageConfig, testS3Connection } from '../lib/minio'
+import {
+  DEFAULT_S3_SETTINGS,
+  reloadStorageConfig,
+  testS3Connection,
+} from '../lib/minio'
 
 const router = Router()
 
@@ -65,17 +70,24 @@ router.get('/', requireAdmin, async (req, res, next) => {
 
 router.put('/', requireAdmin, async (req, res, next) => {
   try {
-    const updates: Record<string, string> = req.body.settings || {}
-    const ops = Object.entries(updates).map(([key, value]) =>
-      prisma.setting.upsert({
-        where: { key },
-        update: { value: String(value) },
-        create: { key, value: String(value) },
-      })
-    )
-    await Promise.all(ops)
+    const updates = await withJob('settings', async (tx) => {
+      const rows = await tx.setting.findMany()
+      const current = {
+        ...DEFAULT_SETTINGS,
+        ...Object.fromEntries(rows.map((r) => [r.key, r.value])),
+      }
+      const values = validateSettingUpdates(req.body.settings, current)
+      for (const [key, value] of Object.entries(values))
+        await tx.setting.upsert({
+          where: { key },
+          update: { value },
+          create: { key, value },
+        })
+      return values
+    })
     // Storage backend may have changed — drop the cached S3 client so it's rebuilt on next use.
-    if (Object.keys(updates).some((k) => k.startsWith('storage.s3'))) reloadStorageConfig()
+    if (Object.keys(updates).some((k) => k.startsWith('storage.s3')))
+      reloadStorageConfig()
     res.json({ success: true })
   } catch (err) {
     next(err)
@@ -84,10 +96,13 @@ router.put('/', requireAdmin, async (req, res, next) => {
 
 router.post('/test-s3', requireAdmin, async (req, res, next) => {
   try {
-    const { endpoint, port, useSSL, region, bucket, accessKey, secretKey } = req.body
+    const { endpoint, port, useSSL, region, bucket, accessKey, secretKey } =
+      req.body
 
     if (!endpoint || !bucket || !accessKey) {
-      return res.status(400).json({ error: 'Endpoint, Bucket und Access Key sind erforderlich' })
+      return res
+        .status(400)
+        .json({ error: 'Endpoint, Bucket und Access Key sind erforderlich' })
     }
 
     // Secret key may be the masked placeholder if the admin didn't change it — fall back to the saved value.
@@ -134,7 +149,9 @@ router.get('/public', async (req, res, next) => {
       registrationEnabled: settings['security.registrationEnabled'] === 'true',
       maxFileSizeBytes: parseInt(settings['storage.maxFileSizeBytes']),
       maxTransferSizeBytes: parseInt(settings['storage.maxTransferSizeBytes']),
-      userStorageQuotaBytes: parseInt(settings['storage.userStorageQuotaBytes'] || '0'),
+      userStorageQuotaBytes: parseInt(
+        settings['storage.userStorageQuotaBytes'] || '0'
+      ),
     })
   } catch (err) {
     next(err)
@@ -153,22 +170,21 @@ router.get('/legal', async (req, res, next) => {
   }
 })
 
-router.get('/disk-stats', async (req, res, next) => {
+router.get('/disk-stats', async (_req, res, next) => {
   try {
-    const stats = fs.statfsSync('/')
-    const total = stats.blocks * stats.bsize
-    const free = stats.bfree * stats.bsize
-    const used = total - free
-    const pct = Math.round((used / total) * 100)
-
-    // Next expiring active transfer — tells users when space will be freed
+    const aggregate = await prisma.transfer.aggregate({
+      _sum: { totalSize: true },
+    })
     const next = await prisma.transfer.findFirst({
       where: { expiresAt: { gt: new Date() } },
       orderBy: { expiresAt: 'asc' },
       select: { expiresAt: true },
     })
-
-    res.json({ total, used, free, pct, nextExpiryAt: next?.expiresAt ?? null })
+    res.json({
+      used: (aggregate._sum.totalSize ?? 0n).toString(),
+      nextExpiryAt: next?.expiresAt ?? null,
+      source: 'transfer-accounting',
+    })
   } catch (err) {
     next(err)
   }

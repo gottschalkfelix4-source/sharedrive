@@ -29,9 +29,18 @@ export function ResetPasswordPage() {
           <div className="w-16 h-16 rounded-2xl bg-red-500/10 border border-red-500/20 flex items-center justify-center mx-auto mb-6">
             <XCircle size={32} className="text-red-400" />
           </div>
-          <h1 className="text-2xl font-bold text-text-primary mb-2">Link ungültig</h1>
-          <p className="text-text-muted text-sm mb-6">Dieser Link zum Zurücksetzen des Passworts ist unvollständig.</p>
-          <Link to="/forgot-password" className="text-primary hover:underline text-sm">Neuen Link anfordern</Link>
+          <h1 className="text-2xl font-bold text-text-primary mb-2">
+            Link ungültig
+          </h1>
+          <p className="text-text-muted text-sm mb-6">
+            Dieser Link zum Zurücksetzen des Passworts ist unvollständig.
+          </p>
+          <Link
+            to="/forgot-password"
+            className="text-primary hover:underline text-sm"
+          >
+            Neuen Link anfordern
+          </Link>
         </motion.div>
       </div>
     )
@@ -50,12 +59,26 @@ export function ResetPasswordPage() {
     }
     setLoading(true)
     try {
-      const { token: jwt, user } = await resetPassword(token, password)
+      const {
+        token: jwt,
+        user,
+        requiresTwoFactor,
+      } = await resetPassword(token, password)
+      if (requiresTwoFactor) {
+        toast.success(
+          'Passwort geändert. Bitte mit dem zweiten Faktor anmelden.'
+        )
+        navigate('/login')
+        return
+      }
+      if (!jwt || !user) throw new Error('Invalid reset response')
       setAuth(user, jwt)
       toast.success('Passwort wurde geändert')
       navigate('/dashboard')
     } catch (err: any) {
-      toast.error(err?.response?.data?.error || 'Link ist ungültig oder abgelaufen')
+      toast.error(
+        err?.response?.data?.error || 'Link ist ungültig oder abgelaufen'
+      )
     } finally {
       setLoading(false)
     }
@@ -76,8 +99,12 @@ export function ResetPasswordPage() {
           <div className="w-12 h-12 rounded-xl bg-gradient-primary flex items-center justify-center mx-auto mb-4">
             <KeyRound size={22} className="text-white" />
           </div>
-          <h1 className="text-2xl font-bold text-text-primary">Neues Passwort</h1>
-          <p className="text-text-muted text-sm mt-1">Wähle ein neues Passwort für dein Konto</p>
+          <h1 className="text-2xl font-bold text-text-primary">
+            Neues Passwort
+          </h1>
+          <p className="text-text-muted text-sm mt-1">
+            Wähle ein neues Passwort für dein Konto
+          </p>
         </div>
 
         <div className="bg-bg-card border border-border rounded-2xl p-6 shadow-card">
@@ -101,7 +128,13 @@ export function ResetPasswordPage() {
               icon={<Lock size={15} />}
               required
             />
-            <Button type="submit" className="w-full" size="lg" loading={loading} icon={<KeyRound size={17} />}>
+            <Button
+              type="submit"
+              className="w-full"
+              size="lg"
+              loading={loading}
+              icon={<KeyRound size={17} />}
+            >
               Passwort ändern
             </Button>
           </form>

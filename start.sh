@@ -9,17 +9,13 @@ echo "║       ShareDrive Quick Start      ║"
 echo "╚══════════════════════════════════╝"
 echo ""
 
-if [ ! -f .env ]; then
-  echo "→ Creating .env from template..."
-  cp .env.example .env
-  echo "✓ .env created — credentials will be set in the setup wizard."
-else
-  echo "→ .env exists, keeping existing configuration."
-fi
+repo_dir=$(cd -- "$(dirname -- "${BASH_SOURCE[0]}")" && pwd)
+cd "$repo_dir"
+SHAREDRIVE_APPDATA="$repo_dir" ./unraid/prepare-config.sh --compose
 
 echo ""
 echo "→ Starting services..."
-docker compose up --build -d
+docker compose up --build -d --wait
 
 echo ""
 echo "✅ ShareDrive is running!"

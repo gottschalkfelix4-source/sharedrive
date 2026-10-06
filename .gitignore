@@ -34,3 +34,9 @@ Thumbs.db
 
 # Claude Code session data
 .claude/
+
+# Local bootstrap token and browser-test artifacts
+.setup-token
+.setup/
+playwright-report/
+test-results/

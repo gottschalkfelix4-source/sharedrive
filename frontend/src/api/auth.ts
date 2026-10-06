@@ -4,12 +4,20 @@ import type { User } from '../types'
 export async function login(
   email: string,
   password: string
-): Promise<{ token?: string; user?: User; requiresTwoFactor?: boolean; challengeToken?: string }> {
+): Promise<{
+  token?: string
+  user?: User
+  requiresTwoFactor?: boolean
+  challengeToken?: string
+}> {
   const res = await api.post('/auth/login', { email, password })
   return res.data
 }
 
-export async function loginTwoFactor(challengeToken: string, code: string): Promise<{ token: string; user: User }> {
+export async function loginTwoFactor(
+  challengeToken: string,
+  code: string
+): Promise<{ token: string; user: User }> {
   const res = await api.post('/auth/2fa/login', { challengeToken, code })
   return res.data
 }
@@ -23,8 +31,17 @@ export async function register(
   return res.data
 }
 
-export async function verifyEmail(token: string): Promise<{ token: string; user: User }> {
-  const res = await api.get(`/auth/verify-email?token=${encodeURIComponent(token)}`)
+export async function verifyEmail(
+  token: string
+): Promise<{
+  token?: string
+  user?: User
+  requiresTwoFactor?: boolean
+  challengeToken?: string
+}> {
+  const res = await api.get(
+    `/auth/verify-email?token=${encodeURIComponent(token)}`
+  )
   return res.data
 }
 
@@ -33,12 +50,22 @@ export async function getMe(): Promise<User> {
   return res.data.user
 }
 
-export async function forgotPassword(email: string): Promise<{ message: string }> {
+export async function forgotPassword(
+  email: string
+): Promise<{ message: string }> {
   const res = await api.post('/auth/forgot-password', { email })
   return res.data
 }
 
-export async function resetPassword(token: string, password: string): Promise<{ token: string; user: User }> {
+export async function resetPassword(
+  token: string,
+  password: string
+): Promise<{
+  token?: string
+  user?: User
+  requiresTwoFactor?: boolean
+  challengeToken?: string
+}> {
   const res = await api.post('/auth/reset-password', { token, password })
   return res.data
 }
@@ -47,7 +74,10 @@ export async function changePassword(
   currentPassword: string,
   newPassword: string
 ): Promise<{ token: string; user: User }> {
-  const res = await api.post('/auth/change-password', { currentPassword, newPassword })
+  const res = await api.post('/auth/change-password', {
+    currentPassword,
+    newPassword,
+  })
   return res.data
 }
 
@@ -56,17 +86,24 @@ export async function logoutAllDevices(): Promise<{ success: boolean }> {
   return res.data
 }
 
-export async function setupTwoFactor(): Promise<{ secret: string; qrCodeDataUrl: string }> {
+export async function setupTwoFactor(): Promise<{
+  secret: string
+  qrCodeDataUrl: string
+}> {
   const res = await api.post('/auth/2fa/setup')
   return res.data
 }
 
-export async function verifyTwoFactor(code: string): Promise<{ token: string; backupCodes: string[]; user: User }> {
+export async function verifyTwoFactor(
+  code: string
+): Promise<{ token: string; backupCodes: string[]; user: User }> {
   const res = await api.post('/auth/2fa/verify', { code })
   return res.data
 }
 
-export async function disableTwoFactor(password: string): Promise<{ token: string; user: User }> {
+export async function disableTwoFactor(
+  password: string
+): Promise<{ token: string; user: User }> {
   const res = await api.post('/auth/2fa/disable', { password })
   return res.data
 }

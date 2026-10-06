@@ -1,7 +1,14 @@
+import { isIP } from 'net'
 import { prisma } from '../lib/prisma'
 
 export type LogLevel = 'info' | 'warn' | 'error'
-export type LogCategory = 'upload' | 'auth' | 'download' | 'system' | 'error' | 'security'
+export type LogCategory =
+  | 'upload'
+  | 'auth'
+  | 'download'
+  | 'system'
+  | 'error'
+  | 'security'
 
 interface LogMeta {
   userId?: string
@@ -13,24 +20,25 @@ interface LogMeta {
 // IPv4  → last octet zeroed   (1.2.3.4 → 1.2.3.0)
 // IPv6  → /48 prefix kept     (2001:db8:85a3::1 → 2001:db8:85a3::)
 // ::ffff:x.x.x.x (mapped v4) → ::ffff:x.x.x.0
-export function anonymizeIp(ip: string): string {
-  if (!ip) return ''
-
-  // IPv4-mapped IPv6 — e.g. ::ffff:192.168.1.4
-  const mapped = ip.match(/^(::ffff:)(\d+\.\d+\.\d+)\.\d+$/i)
-  if (mapped) return `${mapped[1]}${mapped[2]}.0`
-
-  // Plain IPv4
-  const v4 = ip.match(/^(\d+\.\d+\.\d+)\.\d+$/)
-  if (v4) return `${v4[1]}.0`
-
-  // IPv6: keep only the first 3 groups (48-bit prefix, DSGVO standard)
-  if (ip.includes(':')) {
-    const groups = ip.split(':')
-    if (groups.length >= 4) return groups.slice(0, 3).join(':') + '::'
-  }
-
-  return ip
+export function anonymizeIp(input: string): string {
+  const ip = input.split('%')[0]
+  const mapped = ip.match(/^::ffff:(\d+\.\d+\.\d+\.\d+)$/i)
+  if (mapped) return anonymizeIp(mapped[1])
+  if (isIP(ip) === 4) return ip.split('.').slice(0, 3).join('.') + '.0'
+  if (isIP(ip) !== 6) return ''
+  const [left, right] = ip.split('::')
+  const a = left ? left.split(':') : [],
+    b = right ? right.split(':') : []
+  const full =
+    right === undefined
+      ? a
+      : [...a, ...Array(8 - a.length - b.length).fill('0'), ...b]
+  return (
+    full
+      .slice(0, 3)
+      .map((v) => parseInt(v, 16).toString(16))
+      .join(':') + '::'
+  )
 }
 
 export async function log(
@@ -48,8 +56,11 @@ export async function log(
         category,
         message,
         userId: userId ?? null,
-        ip:     ip ? anonymizeIp(ip) : null,
-        meta: extraKeys.length > 0 ? (rest as Record<string, string | number | boolean | null>) : undefined,
+        ip: ip ? anonymizeIp(ip) : null,
+        meta:
+          extraKeys.length > 0
+            ? (rest as Record<string, string | number | boolean | null>)
+            : undefined,
       },
     })
   } catch {
@@ -60,5 +71,8 @@ export async function log(
 export async function cleanOldLogs(retentionDays = 30): Promise<void> {
   const cutoff = new Date()
   cutoff.setDate(cutoff.getDate() - retentionDays)
-  await prisma.log.deleteMany({ where: { createdAt: { lt: cutoff } } })
+  await prisma.$transaction([
+    prisma.log.deleteMany({ where: { createdAt: { lt: cutoff } } }),
+    prisma.downloadLog.deleteMany({ where: { createdAt: { lt: cutoff } } }),
+  ])
 }

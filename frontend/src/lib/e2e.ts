@@ -6,19 +6,24 @@
 // TypeScript 5.3+'s stricter BufferSource checks on the Web Crypto API.
 
 const ALGO = 'AES-GCM'
-const IV_LEN = 12   // bytes — GCM standard nonce
-const TAG_LEN = 16  // bytes — GCM auth tag (appended by subtle.encrypt)
+const IV_LEN = 12 // bytes — GCM standard nonce
+const TAG_LEN = 16 // bytes — GCM auth tag (appended by subtle.encrypt)
 
-export const CHUNK_SIZE = 8 * 1024 * 1024   // must match upload CHUNK_SIZE
+export const CHUNK_SIZE = 8 * 1024 * 1024 // must match upload CHUNK_SIZE
 export const ENC_OVERHEAD = IV_LEN + TAG_LEN // per chunk
 
 export async function generateKey(): Promise<CryptoKey> {
-  return crypto.subtle.generateKey({ name: ALGO, length: 256 }, true, ['encrypt', 'decrypt'])
+  return crypto.subtle.generateKey({ name: ALGO, length: 256 }, true, [
+    'encrypt',
+    'decrypt',
+  ])
 }
 
 function toBase64Url(bytes: Uint8Array): string {
   return btoa(String.fromCharCode(...bytes))
-    .replace(/\+/g, '-').replace(/\//g, '_').replace(/=/g, '')
+    .replace(/\+/g, '-')
+    .replace(/\//g, '_')
+    .replace(/=/g, '')
 }
 
 function fromBase64Url(base64url: string): Uint8Array<ArrayBuffer> {
@@ -38,38 +43,78 @@ export async function exportKey(key: CryptoKey): Promise<string> {
 
 export async function importKey(base64url: string): Promise<CryptoKey> {
   const raw = fromBase64Url(base64url)
-  return crypto.subtle.importKey('raw', raw, { name: ALGO, length: 256 }, false, ['encrypt', 'decrypt'])
+  return crypto.subtle.importKey(
+    'raw',
+    raw,
+    { name: ALGO, length: 256 },
+    false,
+    ['encrypt', 'decrypt']
+  )
 }
 
 // Encrypt a short UTF-8 string (filename, title, message) — used so metadata
 // is just as opaque to the server/DB as the file content itself.
-export async function encryptText(key: CryptoKey, text: string): Promise<string> {
+export async function encryptText(
+  key: CryptoKey,
+  text: string,
+  aad?: Uint8Array<ArrayBuffer>
+): Promise<string> {
   const bytes = new TextEncoder().encode(text)
-  const enc = await encryptChunk(key, bytes as Uint8Array<ArrayBuffer>)
+  const enc = await encryptChunk(
+    key,
+    bytes as Uint8Array<ArrayBuffer>,
+    undefined,
+    0,
+    aad
+  )
   return toBase64Url(enc)
 }
 
-export async function decryptText(key: CryptoKey, base64url: string): Promise<string> {
+export async function decryptText(
+  key: CryptoKey,
+  base64url: string,
+  aad?: Uint8Array<ArrayBuffer>
+): Promise<string> {
   const enc = fromBase64Url(base64url)
-  const dec = await decryptChunk(key, enc)
+  const dec = await decryptChunk(key, enc, undefined, 0, aad)
   return new TextDecoder().decode(dec)
 }
 
-export async function encryptChunk(key: CryptoKey, plaintext: Uint8Array<ArrayBuffer>): Promise<Uint8Array<ArrayBuffer>> {
+export async function encryptChunk(
+  key: CryptoKey,
+  plaintext: Uint8Array<ArrayBuffer>,
+  context?: EncryptionContext,
+  index = 0,
+  aad?: Uint8Array<ArrayBuffer>
+): Promise<Uint8Array<ArrayBuffer>> {
   // getRandomValues with Uint8Array<ArrayBuffer> returns Uint8Array<ArrayBuffer>
   const iv = crypto.getRandomValues(new Uint8Array(IV_LEN))
-  const ciphertext = await crypto.subtle.encrypt({ name: ALGO, iv }, key, plaintext)
+  const ciphertext = await crypto.subtle.encrypt(
+    { name: ALGO, iv, additionalData: aad ?? chunkAAD(context, index) },
+    key,
+    plaintext
+  )
   const out = new Uint8Array(IV_LEN + ciphertext.byteLength)
   out.set(iv)
   out.set(new Uint8Array(ciphertext), IV_LEN)
   return out
 }
 
-export async function decryptChunk(key: CryptoKey, encData: Uint8Array<ArrayBuffer>): Promise<Uint8Array<ArrayBuffer>> {
+export async function decryptChunk(
+  key: CryptoKey,
+  encData: Uint8Array<ArrayBuffer>,
+  context?: EncryptionContext,
+  index = 0,
+  aad?: Uint8Array<ArrayBuffer>
+): Promise<Uint8Array<ArrayBuffer>> {
   // .slice() on Uint8Array<ArrayBuffer> returns Uint8Array<ArrayBuffer>
   const iv = encData.slice(0, IV_LEN)
   const ciphertext = encData.slice(IV_LEN)
-  const plain = await crypto.subtle.decrypt({ name: ALGO, iv }, key, ciphertext)
+  const plain = await crypto.subtle.decrypt(
+    { name: ALGO, iv, additionalData: aad ?? chunkAAD(context, index) },
+    key,
+    ciphertext
+  )
   return new Uint8Array(plain)
 }
 
@@ -79,18 +124,26 @@ export async function decryptToBlob(
   encryptedData: ArrayBuffer,
   plaintextSize: number,
   onProgress?: (pct: number) => void,
+  context?: EncryptionContext
 ): Promise<Blob> {
-  const numChunks = Math.ceil(plaintextSize / CHUNK_SIZE)
+  const numChunks = Math.max(1, Math.ceil(plaintextSize / CHUNK_SIZE))
   // new Uint8Array(ArrayBuffer) → Uint8Array<ArrayBuffer>
+  if (encryptedData.byteLength !== plaintextSize + numChunks * ENC_OVERHEAD)
+    throw new Error('Encrypted file length mismatch')
   const src = new Uint8Array(encryptedData)
   const parts: Uint8Array<ArrayBuffer>[] = []
   let offset = 0
 
   for (let i = 0; i < numChunks; i++) {
-    const plainLen = i < numChunks - 1 ? CHUNK_SIZE : plaintextSize - (numChunks - 1) * CHUNK_SIZE
+    const plainLen =
+      i < numChunks - 1
+        ? CHUNK_SIZE
+        : plaintextSize - (numChunks - 1) * CHUNK_SIZE
     const encLen = plainLen + ENC_OVERHEAD
     // src.slice() → Uint8Array<ArrayBuffer>
-    parts.push(await decryptChunk(key, src.slice(offset, offset + encLen)))
+    parts.push(
+      await decryptChunk(key, src.slice(offset, offset + encLen), context, i)
+    )
     offset += encLen
     onProgress?.(Math.round(((i + 1) / numChunks) * 100))
   }
@@ -105,8 +158,9 @@ export async function decryptStream(
   plaintextSize: number,
   writable: WritableStream<Uint8Array>,
   onProgress?: (pct: number) => void,
+  context?: EncryptionContext
 ): Promise<void> {
-  const numChunks = Math.ceil(plaintextSize / CHUNK_SIZE)
+  const numChunks = Math.max(1, Math.ceil(plaintextSize / CHUNK_SIZE))
   const writer = writable.getWriter()
   const reader = encryptedStream.getReader()
 
@@ -121,25 +175,87 @@ export async function decryptStream(
   }
 
   function encChunkLen(i: number): number {
-    const plainLen = i < numChunks - 1 ? CHUNK_SIZE : plaintextSize - (numChunks - 1) * CHUNK_SIZE
+    const plainLen =
+      i < numChunks - 1
+        ? CHUNK_SIZE
+        : plaintextSize - (numChunks - 1) * CHUNK_SIZE
     return plainLen + ENC_OVERHEAD
   }
 
-  for (let i = 0; i < numChunks; i++) {
-    const needed = encChunkLen(i)
-    while (buf.length < needed) {
-      const { done, value } = await reader.read()
-      if (value) append(value)
-      if (done) break
+  try {
+    for (let i = 0; i < numChunks; i++) {
+      const needed = encChunkLen(i)
+      while (buf.length < needed) {
+        const { done, value } = await reader.read()
+        if (value) append(value)
+        if (done) break
+      }
+      if (buf.length < needed)
+        throw new Error('Encrypted stream ended unexpectedly')
+
+      // buf.slice() → Uint8Array<ArrayBuffer>
+      const chunk = buf.slice(0, needed)
+      buf = buf.slice(needed)
+      await writer.write(await decryptChunk(key, chunk, context, i))
+      onProgress?.(Math.round(((i + 1) / numChunks) * 100))
     }
-    if (buf.length < needed) throw new Error('Encrypted stream ended unexpectedly')
 
-    // buf.slice() → Uint8Array<ArrayBuffer>
-    const chunk = buf.slice(0, needed)
-    buf = buf.slice(needed)
-    await writer.write(await decryptChunk(key, chunk))
-    onProgress?.(Math.round(((i + 1) / numChunks) * 100))
+    const extra = await reader.read()
+    if (buf.length || !extra.done)
+      throw new Error('Unexpected trailing encrypted data')
+    await writer.close()
+  } catch (err) {
+    await writer.abort(err).catch(() => {})
+    await reader.cancel(err).catch(() => {})
+    throw err
+  } finally {
+    writer.releaseLock()
+    reader.releaseLock()
   }
+}
 
-  await writer.close()
+export interface EncryptionContext {
+  id: string
+  fileIndex: number
+  plaintextSize: number
+}
+export function chunkAAD(
+  context: EncryptionContext | undefined,
+  index: number
+): Uint8Array<ArrayBuffer> | undefined {
+  if (!context) return undefined
+  return new TextEncoder().encode(
+    JSON.stringify([
+      'ShareDrive',
+      2,
+      context.id,
+      context.fileIndex,
+      index,
+      context.plaintextSize,
+    ])
+  )
+}
+export function metadataAAD(
+  id: string,
+  field: string
+): Uint8Array<ArrayBuffer> {
+  return new TextEncoder().encode(JSON.stringify(['ShareDrive', 2, id, field]))
+}
+
+export interface PlainMetadata {
+  title: string | null
+  message: string | null
+  files: {
+    index: number
+    name: string
+    path: string | null
+    size: number
+    mimeType: string
+  }[]
+}
+export function encryptionManifest(value: PlainMetadata): string {
+  return JSON.stringify({
+    ...value,
+    files: [...value.files].sort((a, b) => a.index - b.index),
+  })
 }

@@ -2,12 +2,15 @@ export interface ScanFile {
   name: string
   relativePath?: string
   size: number
+  storedSize?: number
+  encryptionIndex?: number
   mimeType: string
   storageKey: string
 }
 
 export interface PendingTransfer {
   shortId: string
+  ip?: string
   userId: string | null
   title?: string
   message?: string
@@ -16,6 +19,10 @@ export interface PendingTransfer {
   notifyEmail?: string
   maxDownloads?: number | null
   totalSize: number
+  encrypted?: boolean
+  encryptionVersion?: number
+  encryptedManifest?: string
+  encryptionContext?: string
   files: ScanFile[]
 }
 
@@ -43,12 +50,5 @@ export interface ScanSession {
   createdAt: Date
 }
 
-export const scanSessions = new Map<string, ScanSession>()
-
-// Clean up sessions older than 2 hours every 30 min
-setInterval(() => {
-  const cutoff = Date.now() - 2 * 60 * 60 * 1000
-  for (const [key, session] of scanSessions) {
-    if (session.createdAt.getTime() < cutoff) scanSessions.delete(key)
-  }
-}, 30 * 60 * 1000).unref()
+import { PersistentMap } from './jobs'
+export const scanSessions = new PersistentMap<ScanSession>('scan')

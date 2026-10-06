@@ -9,13 +9,16 @@ import { Spinner } from '@/components/ui/Spinner'
 import toast from 'react-hot-toast'
 
 function DiagCard() {
-  const { data, isLoading } = useQuery({ queryKey: ['diag-token'], queryFn: getDiagToken })
+  const { data, isLoading } = useQuery({
+    queryKey: ['diag-token'],
+    queryFn: getDiagToken,
+  })
   const [copied, setCopied] = useState<string | null>(null)
 
   const baseUrl = window.location.origin
   const token = data?.token ?? ''
-  const infoUrl = `${baseUrl}/api/diag?key=${token}`
-  const uploadUrl = `${baseUrl}/api/diag/upload?key=${token}`
+  const infoUrl = `${baseUrl}/api/diag`
+  const uploadUrl = `${baseUrl}/api/diag/upload`
 
   const copy = (label: string, text: string) => {
     navigator.clipboard.writeText(text)
@@ -30,20 +33,36 @@ function DiagCard() {
           <FlaskConical size={20} />
         </div>
         <div>
-          <h2 className="font-semibold text-text-primary">Diagnose-Endpunkte</h2>
-          <p className="text-xs text-text-muted">URLs zum Testen von Verbindung und Upload-Kapazität</p>
+          <h2 className="font-semibold text-text-primary">
+            Diagnose-Endpunkte
+          </h2>
+          <p className="text-xs text-text-muted">
+            URLs zum Testen von Verbindung und Upload-Kapazität
+          </p>
         </div>
       </div>
 
-      {isLoading ? <Spinner /> : (
+      {isLoading ? (
+        <Spinner />
+      ) : (
         <div className="space-y-3">
           {[
-            { label: 'Info (GET)', url: infoUrl, hint: 'Gibt Header, IP, Proxy-Infos zurück' },
-            { label: 'Upload-Test (POST)', url: uploadUrl, hint: 'Beliebiger Body – gibt empfangene Bytes zurück' },
+            {
+              label: 'Info (GET)',
+              url: infoUrl,
+              hint: 'Gibt Header, IP, Proxy-Infos zurück',
+            },
+            {
+              label: 'Upload-Test (POST)',
+              url: uploadUrl,
+              hint: 'Beliebiger Body – gibt empfangene Bytes zurück',
+            },
           ].map(({ label, url, hint }) => (
             <div key={label}>
               <div className="flex items-center justify-between mb-1">
-                <span className="text-xs font-medium text-text-secondary">{label}</span>
+                <span className="text-xs font-medium text-text-secondary">
+                  {label}
+                </span>
                 <span className="text-xs text-text-muted">{hint}</span>
               </div>
               <div className="flex items-center gap-2">
@@ -55,13 +74,24 @@ function DiagCard() {
                   className="p-2 rounded-lg border border-border text-text-muted hover:text-text-primary hover:border-border-strong transition-colors flex-shrink-0"
                   title="Copy URL"
                 >
-                  {copied === label ? <Check size={14} className="text-emerald-400" /> : <Copy size={14} />}
+                  {copied === label ? (
+                    <Check size={14} className="text-emerald-400" />
+                  ) : (
+                    <Copy size={14} />
+                  )}
                 </button>
               </div>
             </div>
           ))}
+          <Button
+            variant="secondary"
+            onClick={() => copy('Header', `x-diag-key: ${token}`)}
+          >
+            Diagnose-Header kopieren
+          </Button>
           <p className="text-xs text-text-muted pt-1">
-            Der Schlüssel wird aus dem JWT_SECRET abgeleitet und setzt sich beim Neustart zurück.
+            Diagnose erfordert eine gültige Admin-Sitzung und den Header
+            x-diag-key. Das Token gilt fünf Minuten; es gehört nicht in die URL.
           </p>
         </div>
       )}
@@ -99,7 +129,12 @@ export function GeneralSettings() {
     onError: () => toast.error('Speichern fehlgeschlagen'),
   })
 
-  if (isLoading) return <div className="flex justify-center py-8"><Spinner /></div>
+  if (isLoading)
+    return (
+      <div className="flex justify-center py-8">
+        <Spinner />
+      </div>
+    )
 
   return (
     <div className="space-y-5">
@@ -109,8 +144,12 @@ export function GeneralSettings() {
             <Globe size={20} />
           </div>
           <div>
-            <h2 className="font-semibold text-text-primary">Allgemeine Einstellungen</h2>
-            <p className="text-xs text-text-muted">Grundlegende App-Konfiguration</p>
+            <h2 className="font-semibold text-text-primary">
+              Allgemeine Einstellungen
+            </h2>
+            <p className="text-xs text-text-muted">
+              Grundlegende App-Konfiguration
+            </p>
           </div>
         </div>
 
@@ -125,7 +164,9 @@ export function GeneralSettings() {
             label="Basis-URL"
             placeholder="https://share.yourdomain.com"
             value={form['app.baseUrl']}
-            onChange={(e) => setForm({ ...form, 'app.baseUrl': e.target.value })}
+            onChange={(e) =>
+              setForm({ ...form, 'app.baseUrl': e.target.value })
+            }
             icon={<Globe size={15} />}
             hint="Öffentliche URL dieser Instanz – wird in Download-Links und E-Mails verwendet. Kein abschließender Schrägstrich."
           />
@@ -133,7 +174,9 @@ export function GeneralSettings() {
             label="Beschreibung"
             rows={3}
             value={form['app.description']}
-            onChange={(e) => setForm({ ...form, 'app.description': e.target.value })}
+            onChange={(e) =>
+              setForm({ ...form, 'app.description': e.target.value })
+            }
             hint="Wird auf der Startseite angezeigt"
           />
           <Input
@@ -142,7 +185,9 @@ export function GeneralSettings() {
             min="1"
             max="1000"
             value={form['app.maxFilesPerTransfer']}
-            onChange={(e) => setForm({ ...form, 'app.maxFilesPerTransfer': e.target.value })}
+            onChange={(e) =>
+              setForm({ ...form, 'app.maxFilesPerTransfer': e.target.value })
+            }
             hint="Maximale Anzahl Dateien in einem einzelnen Transfer"
           />
         </div>

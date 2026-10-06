@@ -1,0 +1,17 @@
+# Official source-only MinIO release pinned to its Git commit; Go verifies modules.
+FROM golang:1.26.1-bookworm@sha256:ab3d6955bbc813a0f3fdf220c1d817dd89c0b3f283777db8ece4a32fe7858edd AS build
+ARG MINIO_COMMIT=9e49d5e7a648f00e26f2246f4dc28e6b07f8c84a
+RUN --mount=type=secret,id=extra_ca if [ -f /run/secrets/extra_ca ]; then cat /etc/ssl/certs/ca-certificates.crt /run/secrets/extra_ca > /tmp/build-ca.crt; export GIT_SSL_CAINFO=/tmp/build-ca.crt; fi; git init /src && cd /src && git remote add origin https://github.com/minio/minio.git && git fetch --depth 1 origin "$MINIO_COMMIT" && git checkout --detach FETCH_HEAD && test "$(git rev-parse HEAD)" = "$MINIO_COMMIT"
+WORKDIR /src
+RUN --mount=type=secret,id=extra_ca if [ -f /run/secrets/extra_ca ]; then export SSL_CERT_FILE=/tmp/build-ca.crt; fi; CGO_ENABLED=0 go build -p 4 -trimpath -ldflags='-s -w' -o /minio .
+
+FROM debian:bookworm-slim
+ARG MINIO_COMMIT=9e49d5e7a648f00e26f2246f4dc28e6b07f8c84a
+LABEL org.opencontainers.image.source="https://github.com/minio/minio" org.opencontainers.image.revision=$MINIO_COMMIT
+RUN apt-get update && apt-get install -y --no-install-recommends ca-certificates curl && rm -rf /var/lib/apt/lists/*
+COPY --from=build /minio /usr/local/bin/minio
+COPY --from=build /src/LICENSE /usr/share/doc/minio/LICENSE
+EXPOSE 9000 9001
+ENTRYPOINT ["minio"]
+CMD ["server", "/data", "--console-address", ":9001"]
+HEALTHCHECK --interval=10s --timeout=5s --start-period=30s CMD curl -fsS http://localhost:9000/minio/health/ready || exit 1

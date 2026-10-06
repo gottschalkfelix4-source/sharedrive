@@ -1,7 +1,14 @@
 import { useState } from 'react'
 import { motion, AnimatePresence } from 'framer-motion'
 import { QRCodeSVG } from 'qrcode.react'
-import { Copy, Check, ExternalLink, RotateCcw, ShieldCheck, QrCode } from 'lucide-react'
+import {
+  Copy,
+  Check,
+  ExternalLink,
+  RotateCcw,
+  ShieldCheck,
+  QrCode,
+} from 'lucide-react'
 import { Button } from '@/components/ui/Button'
 import { Badge } from '@/components/ui/Badge'
 import { formatBytes, formatRelative, copyToClipboard } from '@/lib/utils'
@@ -12,16 +19,26 @@ interface SuccessScreenProps {
   fileCount: number
   totalSize: string
   encryptionKey?: string
+  encryptionContext?: string
   virusScanned?: boolean
   onReset: () => void
 }
 
-export function SuccessScreen({ shortId, expiresAt, fileCount, totalSize, encryptionKey, virusScanned, onReset }: SuccessScreenProps) {
+export function SuccessScreen({
+  shortId,
+  expiresAt,
+  fileCount,
+  totalSize,
+  encryptionKey,
+  encryptionContext,
+  virusScanned,
+  onReset,
+}: SuccessScreenProps) {
   const [copied, setCopied] = useState(false)
   const [showQr, setShowQr] = useState(false)
   // If E2E encrypted, embed the key in the URL fragment (never sent to server)
   const url = encryptionKey
-    ? `${window.location.origin}/d/${shortId}#key=${encryptionKey}`
+    ? `${window.location.origin}/d/${shortId}#key=${encryptionKey}${encryptionContext ? `&v=2&context=${encryptionContext}` : ''}`
     : `${window.location.origin}/d/${shortId}`
 
   const handleCopy = async () => {
@@ -54,9 +71,12 @@ export function SuccessScreen({ shortId, expiresAt, fileCount, totalSize, encryp
       </motion.div>
 
       <div>
-        <h2 className="text-2xl font-bold text-text-primary">Transfer bereit!</h2>
+        <h2 className="text-2xl font-bold text-text-primary">
+          Transfer bereit!
+        </h2>
         <p className="text-text-muted mt-1">
-          {fileCount} Datei{fileCount > 1 ? 'en' : ''} · {formatBytes(totalSize)} · läuft ab {formatRelative(expiresAt)}
+          {fileCount} Datei{fileCount > 1 ? 'en' : ''} ·{' '}
+          {formatBytes(totalSize)} · läuft ab {formatRelative(expiresAt)}
         </p>
         {(encryptionKey || virusScanned) && (
           <div className="flex justify-center gap-2 mt-2 flex-wrap">
@@ -78,11 +98,14 @@ export function SuccessScreen({ shortId, expiresAt, fileCount, totalSize, encryp
 
       {/* URL box */}
       <div className="flex items-center gap-2 p-3 bg-bg-elevated rounded-xl border border-border group">
-        <span className="flex-1 text-sm text-text-secondary truncate text-left">{url}</span>
+        <span className="flex-1 text-sm text-text-secondary truncate text-left">
+          {url}
+        </span>
         <Button
           size="sm"
           variant="secondary"
           icon={<QrCode size={14} />}
+          aria-label="QR-Code einblenden"
           onClick={() => setShowQr((v) => !v)}
         />
         <Button
@@ -112,14 +135,14 @@ export function SuccessScreen({ shortId, expiresAt, fileCount, totalSize, encryp
 
       {/* Actions */}
       <div className="flex items-center gap-3">
-        <Button
-          variant="outline"
-          className="flex-1"
-          icon={<ExternalLink size={15} />}
-          onClick={() => window.open(`/d/${shortId}`, '_blank')}
+        <a
+          href={url}
+          target="_blank"
+          rel="noopener noreferrer"
+          className="flex-1 inline-flex items-center justify-center gap-2 border border-primary/50 text-primary hover:bg-primary/10 px-4 py-2 text-sm rounded-xl focus-visible:ring-2 focus-visible:ring-primary"
         >
-          Download-Seite öffnen
-        </Button>
+          <ExternalLink size={15} /> Download-Seite öffnen
+        </a>
         <Button
           variant="secondary"
           icon={<RotateCcw size={15} />}

@@ -1,0 +1,1 @@
+world.json is converted from world-atlas 2.0.2 countries-110m.json (Michael Bostock, ISC license in world-atlas.txt), using its quantized arcs and transform. Underlying boundaries: Natural Earth 1:110m, public domain. Source: https://github.com/topojson/world-atlas and https://www.naturalearthdata.com/about/terms-of-use/ . No remote tiles are requested at runtime.

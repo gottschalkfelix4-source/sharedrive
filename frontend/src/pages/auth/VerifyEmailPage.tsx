@@ -10,7 +10,9 @@ export function VerifyEmailPage() {
   const [searchParams] = useSearchParams()
   const navigate = useNavigate()
   const { setAuth } = useAuthStore()
-  const [status, setStatus] = useState<'loading' | 'success' | 'error'>('loading')
+  const [status, setStatus] = useState<'loading' | 'success' | 'error'>(
+    'loading'
+  )
   const [errorMessage, setErrorMessage] = useState('')
 
   useEffect(() => {
@@ -22,13 +24,21 @@ export function VerifyEmailPage() {
     }
 
     verifyEmail(token)
-      .then(({ token: jwt, user }) => {
+      .then(({ token: jwt, user, requiresTwoFactor }) => {
+        if (requiresTwoFactor) {
+          navigate('/login')
+          return
+        }
+        if (!jwt || !user) throw new Error('Invalid verification response')
         setAuth(user, jwt)
         setStatus('success')
         setTimeout(() => navigate('/dashboard'), 2500)
       })
       .catch((err: any) => {
-        setErrorMessage(err?.response?.data?.error || 'Dieser Link ist ungültig oder abgelaufen.')
+        setErrorMessage(
+          err?.response?.data?.error ||
+            'Dieser Link ist ungültig oder abgelaufen.'
+        )
         setStatus('error')
       })
   }, [])
@@ -42,8 +52,13 @@ export function VerifyEmailPage() {
       >
         {status === 'loading' && (
           <>
-            <Loader2 size={40} className="text-primary animate-spin mx-auto mb-4" />
-            <h1 className="text-xl font-bold text-text-primary">E-Mail wird verifiziert…</h1>
+            <Loader2
+              size={40}
+              className="text-primary animate-spin mx-auto mb-4"
+            />
+            <h1 className="text-xl font-bold text-text-primary">
+              E-Mail wird verifiziert…
+            </h1>
           </>
         )}
 
@@ -52,8 +67,12 @@ export function VerifyEmailPage() {
             <div className="w-16 h-16 rounded-2xl bg-emerald-500/10 border border-emerald-500/20 flex items-center justify-center mx-auto mb-6">
               <CheckCircle size={32} className="text-emerald-400" />
             </div>
-            <h1 className="text-2xl font-bold text-text-primary mb-2">E-Mail bestätigt!</h1>
-            <p className="text-text-muted text-sm">Dein Konto ist jetzt aktiv. Du wirst zum Dashboard weitergeleitet…</p>
+            <h1 className="text-2xl font-bold text-text-primary mb-2">
+              E-Mail bestätigt!
+            </h1>
+            <p className="text-text-muted text-sm">
+              Dein Konto ist jetzt aktiv. Du wirst zum Dashboard weitergeleitet…
+            </p>
           </>
         )}
 
@@ -62,14 +81,18 @@ export function VerifyEmailPage() {
             <div className="w-16 h-16 rounded-2xl bg-red-500/10 border border-red-500/20 flex items-center justify-center mx-auto mb-6">
               <XCircle size={32} className="text-red-400" />
             </div>
-            <h1 className="text-2xl font-bold text-text-primary mb-2">Verifizierung fehlgeschlagen</h1>
+            <h1 className="text-2xl font-bold text-text-primary mb-2">
+              Verifizierung fehlgeschlagen
+            </h1>
             <p className="text-text-muted text-sm mb-6">{errorMessage}</p>
             <Button variant="secondary" onClick={() => navigate('/register')}>
               Zurück zur Registrierung
             </Button>
             <p className="text-sm text-text-muted mt-4">
               Bereits verifiziert?{' '}
-              <Link to="/login" className="text-primary hover:underline">Anmelden</Link>
+              <Link to="/login" className="text-primary hover:underline">
+                Anmelden
+              </Link>
             </p>
           </>
         )}

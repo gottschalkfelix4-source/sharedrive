@@ -1,15 +1,43 @@
+import type { FileInfo, Transfer } from '@/types'
 import { useState, useMemo, useEffect } from 'react'
 import { useParams } from 'react-router-dom'
 import { useQuery } from '@tanstack/react-query'
 import { motion } from 'framer-motion'
-import { Download, Lock, FileIcon, Archive, Clock, AlertCircle, ShieldCheck, ShieldOff } from 'lucide-react'
-import { getTransfer, getDownloadUrl, getZipUrl } from '@/api/transfers'
-import { importKey, decryptText, decryptToBlob, decryptStream } from '@/lib/e2e'
+import {
+  Download,
+  Lock,
+  FileIcon,
+  Archive,
+  Clock,
+  AlertCircle,
+  ShieldCheck,
+  ShieldOff,
+} from 'lucide-react'
+import {
+  getTransfer,
+  getDownloadUrl,
+  getZipUrl,
+  getTicketUrl,
+} from '@/api/transfers'
+import {
+  importKey,
+  decryptText,
+  decryptToBlob,
+  decryptStream,
+  metadataAAD,
+  encryptionManifest,
+  type EncryptionContext,
+} from '@/lib/e2e'
 import { Button } from '@/components/ui/Button'
 import { Input } from '@/components/ui/Input'
 import { Badge } from '@/components/ui/Badge'
 import { Spinner } from '@/components/ui/Spinner'
-import { formatBytes, formatDate, formatRelative, getFileIcon } from '@/lib/utils'
+import {
+  formatBytes,
+  formatDate,
+  formatRelative,
+  getFileIcon,
+} from '@/lib/utils'
 import toast from 'react-hot-toast'
 
 type DlProgress = { phase: 'download' | 'decrypt'; pct: number; speed: number }
@@ -17,9 +45,11 @@ type DlProgress = { phase: 'download' | 'decrypt'; pct: number; speed: number }
 async function readWithProgress(
   response: Response,
   plaintextSize: number,
-  onProgress: (pct: number, speed: number) => void,
+  onProgress: (pct: number, speed: number) => void
 ): Promise<ArrayBuffer> {
-  const contentLen = parseInt(response.headers.get('content-length') || String(plaintextSize))
+  const contentLen = parseInt(
+    response.headers.get('content-length') || String(plaintextSize)
+  )
   const reader = response.body!.getReader()
   const chunks: Uint8Array[] = []
   let received = 0
@@ -34,7 +64,10 @@ async function readWithProgress(
     const now = Date.now()
     const elapsed = (now - lastT) / 1000
     if (elapsed >= 0.25) {
-      onProgress(Math.min(99, Math.round((received / contentLen) * 100)), (received - lastB) / elapsed)
+      onProgress(
+        Math.min(99, Math.round((received / contentLen) * 100)),
+        (received - lastB) / elapsed
+      )
       lastT = now
       lastB = received
     }
@@ -43,7 +76,10 @@ async function readWithProgress(
 
   const buf = new Uint8Array(received)
   let off = 0
-  for (const c of chunks) { buf.set(c, off); off += c.length }
+  for (const c of chunks) {
+    buf.set(c, off)
+    off += c.length
+  }
   return buf.buffer as ArrayBuffer
 }
 
@@ -62,11 +98,29 @@ export function DownloadPage() {
   const [password, setPassword] = useState('')
   const [enteredPassword, setEnteredPassword] = useState<string | undefined>()
   const [passwordError, setPasswordError] = useState('')
-  const [decrypting, setDecrypting] = useState<string | null>(null)  // fileId being decrypted
+  const [decrypting, setDecrypting] = useState<string | null>(null) // fileId being decrypted
   const [dlProgress, setDlProgress] = useState<DlProgress | null>(null)
-  const [dlQueue, setDlQueue] = useState<{ current: number; total: number } | null>(null)
+  const [dlQueue, setDlQueue] = useState<{
+    current: number
+    total: number
+  } | null>(null)
 
   const encKeyRaw = useEncryptionKey()
+  const fragment = useMemo(
+    () => new URLSearchParams(window.location.hash.slice(1)),
+    []
+  )
+  const [integrityError, setIntegrityError] = useState('')
+  const contextId = fragment.get('context')
+  const version = fragment.get('v') === '2' ? 2 : 1
+  const encryptionContext = (file: FileInfo): EncryptionContext | undefined =>
+    version === 2
+      ? {
+          id: contextId!,
+          fileIndex: file.encryptionIndex!,
+          plaintextSize: Number(file.size),
+        }
+      : undefined
 
   const { data, isLoading, error } = useQuery({
     queryKey: ['transfer', shortId, enteredPassword],
@@ -78,31 +132,111 @@ export function DownloadPage() {
   // For E2E transfers, title/message/filenames/folder paths are stored encrypted —
   // decrypt them client-side once the key (from the URL fragment) and the transfer
   // data are available.
-  const [decryptedMeta, setDecryptedMeta] = useState<{ title?: string; message?: string; names: Record<string, string>; paths: Record<string, string> }>({ names: {}, paths: {} })
+  const [verifiedData, setVerifiedData] = useState<Transfer | null>(null)
+  const [decryptedMeta, setDecryptedMeta] = useState<{
+    title?: string
+    message?: string
+    names: Record<string, string>
+    paths: Record<string, string>
+  }>({ names: {}, paths: {} })
 
   useEffect(() => {
     if (!data?.encrypted || !encKeyRaw) return
     let cancelled = false
+    setIntegrityError('')
     ;(async () => {
+      if (
+        version !== (data.encryptionVersion ?? 1) ||
+        (version === 2 && (!contextId || data.encryptionContext !== contextId))
+      )
+        throw new Error('Verschlüsselungsformat passt nicht zum Link')
       const key = await importKey(encKeyRaw)
-      const title = data.title ? await decryptText(key, data.title).catch(() => undefined) : undefined
-      const message = data.message ? await decryptText(key, data.message).catch(() => undefined) : undefined
+      const title = data.title
+        ? await decryptText(
+            key,
+            data.title,
+            version === 2 ? metadataAAD(contextId!, 'title') : undefined
+          )
+        : undefined
+      const message = data.message
+        ? await decryptText(
+            key,
+            data.message,
+            version === 2 ? metadataAAD(contextId!, 'message') : undefined
+          )
+        : undefined
       const names: Record<string, string> = {}
       const paths: Record<string, string> = {}
       for (const f of data.files) {
-        names[f.id] = await decryptText(key, f.name).catch(() => f.name)
+        names[f.id] = await decryptText(
+          key,
+          f.name,
+          version === 2
+            ? metadataAAD(contextId!, `name:${f.encryptionIndex}`)
+            : undefined
+        )
         if (f.relativePath) {
-          paths[f.id] = await decryptText(key, f.relativePath).catch(() => f.relativePath)
+          paths[f.id] = await decryptText(
+            key,
+            f.relativePath,
+            version === 2
+              ? metadataAAD(contextId!, `path:${f.encryptionIndex}`)
+              : undefined
+          )
         }
       }
-      if (!cancelled) setDecryptedMeta({ title, message, names, paths })
-    })()
-    return () => { cancelled = true }
+      if (version === 2) {
+        if (!data.encryptedManifest)
+          throw new Error('Authentifiziertes Manifest fehlt')
+        const indexes = data.files.map((f) => f.encryptionIndex)
+        if (
+          indexes.some(
+            (i) => !Number.isInteger(i) || i! < 0 || i! >= data.files.length
+          ) ||
+          new Set(indexes).size !== indexes.length
+        )
+          throw new Error('Ungültige Dateiliste')
+        const manifest = await decryptText(
+          key,
+          data.encryptedManifest,
+          metadataAAD(contextId!, 'manifest')
+        )
+        const actual = encryptionManifest({
+          title: title ?? null,
+          message: message ?? null,
+          files: data.files.map((f) => ({
+            index: f.encryptionIndex!,
+            name: names[f.id],
+            path: paths[f.id] ?? null,
+            size: Number(f.size),
+            mimeType: f.mimeType,
+          })),
+        })
+        if (actual !== manifest) throw new Error('Dateiliste wurde verändert')
+      }
+      if (!cancelled) {
+        setDecryptedMeta({ title, message, names, paths })
+        setVerifiedData(data)
+      }
+    })().catch(() => {
+      if (!cancelled)
+        setIntegrityError(
+          'Der Schlüssel oder die Dateiintegrität konnte nicht geprüft werden.'
+        )
+    })
+    return () => {
+      cancelled = true
+    }
   }, [data, encKeyRaw])
 
-  const getFileName = (fileId: string, fallback: string) => decryptedMeta.names[fileId] ?? fallback
-  const getDisplayPath = (file: any, isEncrypted: boolean) =>
-    isEncrypted ? (decryptedMeta.paths[file.id] ?? decryptedMeta.names[file.id] ?? 'Verschlüsselte Datei') : (file.relativePath || file.name)
+  const getFileName = (fileId: string, fallback: string) =>
+    decryptedMeta.names[fileId] ?? fallback
+  const getDisplayPath = (file: FileInfo, isEncrypted: boolean) =>
+    isEncrypted
+      ? (decryptedMeta.paths[file.id] ??
+        decryptedMeta.names[file.id] ??
+        'Verschlüsselte Datei')
+      : file.relativePath || file.name
 
   const handlePasswordSubmit = (e: React.FormEvent) => {
     e.preventDefault()
@@ -110,40 +244,81 @@ export function DownloadPage() {
     setEnteredPassword(password)
   }
 
-  const handleDownloadFile = async (fileId: string, fileName: string, fileSize: string) => {
+  const handleDownloadFile = async (
+    fileId: string,
+    fileName: string,
+    fileSize: string
+  ) => {
     const url = getDownloadUrl(shortId!, fileId)
     const transfer = data
+    const file = transfer?.files.find((f) => f.id === fileId)
+    if (transfer?.encrypted && verifiedData !== transfer) {
+      toast.error('Verschlüsselung wird geprüft')
+      return
+    }
+    if (
+      !file ||
+      integrityError ||
+      (version === 2 && (!file || contextId !== transfer?.encryptionContext))
+    ) {
+      toast.error('Dateiintegrität nicht bestätigt')
+      return
+    }
 
     // Encrypted transfer with key available — decrypt in browser
     if (transfer?.encrypted && encKeyRaw) {
       setDecrypting(fileId)
       setDlProgress({ phase: 'download', pct: 0, speed: 0 })
+      let pendingWriter: WritableStream | null = null
       try {
         const key = await importKey(encKeyRaw)
-        const fetchHeaders: Record<string, string> = { 'Accept': 'application/octet-stream' }
-        if (enteredPassword) fetchHeaders['x-transfer-password'] = enteredPassword
+        const fetchHeaders: Record<string, string> = {
+          Accept: 'application/octet-stream',
+        }
+        if (enteredPassword)
+          fetchHeaders['x-transfer-password'] = enteredPassword
 
         if (hasFilePicker) {
           // Streaming decrypt via File System Access API — download + decrypt interleaved
-          const fileHandle = await (window as any).showSaveFilePicker({ suggestedName: fileName })
+          const fileHandle = await (window as any).showSaveFilePicker({
+            suggestedName: fileName,
+          })
           const writable = await fileHandle.createWritable()
+          pendingWriter = writable
           const response = await fetch(url, { headers: fetchHeaders })
           if (!response.ok) throw new Error('Download fehlgeschlagen')
           setDlProgress({ phase: 'decrypt', pct: 0, speed: 0 })
-          await decryptStream(response.body!, key, parseInt(fileSize), writable, (pct) => {
-            setDlProgress({ phase: 'decrypt', pct, speed: 0 })
-          })
+          await decryptStream(
+            response.body!,
+            key,
+            parseInt(fileSize),
+            writable,
+            (pct) => {
+              setDlProgress({ phase: 'decrypt', pct, speed: 0 })
+            },
+            encryptionContext(file)
+          )
         } else {
           // In-memory decrypt — phase 1: download, phase 2: decrypt
           const response = await fetch(url, { headers: fetchHeaders })
           if (!response.ok) throw new Error('Download fehlgeschlagen')
-          const encData = await readWithProgress(response, parseInt(fileSize), (pct, speed) => {
-            setDlProgress({ phase: 'download', pct, speed })
-          })
+          const encData = await readWithProgress(
+            response,
+            parseInt(fileSize),
+            (pct, speed) => {
+              setDlProgress({ phase: 'download', pct, speed })
+            }
+          )
           setDlProgress({ phase: 'decrypt', pct: 0, speed: 0 })
-          const blob = await decryptToBlob(key, encData, parseInt(fileSize), (pct) => {
-            setDlProgress({ phase: 'decrypt', pct, speed: 0 })
-          })
+          const blob = await decryptToBlob(
+            key,
+            encData,
+            parseInt(fileSize),
+            (pct) => {
+              setDlProgress({ phase: 'decrypt', pct, speed: 0 })
+            },
+            encryptionContext(file)
+          )
           const a = document.createElement('a')
           a.href = URL.createObjectURL(blob)
           a.download = fileName
@@ -151,7 +326,8 @@ export function DownloadPage() {
           setTimeout(() => URL.revokeObjectURL(a.href), 10_000)
         }
       } catch (err: any) {
-        console.error(err)
+        if (pendingWriter && !pendingWriter.locked)
+          await pendingWriter.abort().catch(() => {})
         toast.error(err?.message || 'Entschlüsselung fehlgeschlagen')
       } finally {
         setDecrypting(null)
@@ -161,11 +337,26 @@ export function DownloadPage() {
     }
 
     // Regular (unencrypted) download
-    window.open(url, '_blank')
+    try {
+      const href = await getTicketUrl(shortId!, fileId, enteredPassword)
+      const a = document.createElement('a')
+      a.href = href
+      a.download = fileName
+      a.click()
+    } catch (err) {
+      toast.error('Download fehlgeschlagen')
+    }
   }
 
-  const handleDownloadAll = () => {
-    window.open(getZipUrl(shortId!), '_blank')
+  const handleDownloadAll = async () => {
+    try {
+      const a = document.createElement('a')
+      a.href = await getTicketUrl(shortId!, undefined, enteredPassword)
+      a.download = 'transfer.zip'
+      a.click()
+    } catch {
+      toast.error('Download fehlgeschlagen')
+    }
   }
 
   const handleDownloadAllEncrypted = async () => {
@@ -187,10 +378,11 @@ export function DownloadPage() {
   }
 
   if (error) {
-    const errMsg = (error as any)?.response?.data?.error || 'Transfer nicht gefunden'
+    const errMsg =
+      (error as any)?.response?.data?.error || 'Transfer nicht gefunden'
     const isPasswordRequired = (error as any)?.response?.status === 401
 
-    if (isPasswordRequired && !enteredPassword) {
+    if (isPasswordRequired) {
       return (
         <div className="min-h-screen flex items-center justify-center px-4">
           <motion.div
@@ -201,15 +393,23 @@ export function DownloadPage() {
             <div className="w-16 h-16 rounded-full bg-amber-500/10 border border-amber-500/20 flex items-center justify-center mx-auto mb-4">
               <Lock size={28} className="text-amber-400" />
             </div>
-            <h2 className="text-xl font-bold text-text-primary mb-2">Passwortgeschützt</h2>
-            <p className="text-text-muted text-sm mb-6">Passwort eingeben, um auf diesen Transfer zuzugreifen</p>
+            <h2 className="text-xl font-bold text-text-primary mb-2">
+              Passwortgeschützt
+            </h2>
+            <p className="text-text-muted text-sm mb-6">
+              Passwort eingeben, um auf diesen Transfer zuzugreifen
+            </p>
             <form onSubmit={handlePasswordSubmit} className="space-y-3">
               <Input
                 type="password"
                 placeholder="Passwort"
                 value={password}
                 onChange={(e) => setPassword(e.target.value)}
-                error={passwordError}
+                error={
+                  enteredPassword
+                    ? 'Passwort ungültig. Bitte erneut versuchen.'
+                    : passwordError
+                }
                 icon={<Lock size={15} />}
               />
               <Button type="submit" className="w-full" size="lg">
@@ -231,21 +431,28 @@ export function DownloadPage() {
           <div className="w-16 h-16 rounded-full bg-red-500/10 border border-red-500/20 flex items-center justify-center mx-auto mb-4">
             <AlertCircle size={28} className="text-red-400" />
           </div>
-          <h2 className="text-xl font-bold text-text-primary mb-2">Transfer nicht verfügbar</h2>
+          <h2 className="text-xl font-bold text-text-primary mb-2">
+            Transfer nicht verfügbar
+          </h2>
           <p className="text-text-muted text-sm">{errMsg}</p>
         </motion.div>
       </div>
     )
   }
 
+  if (!data) return null
   const transfer = data
   const isExpired = new Date(transfer.expiresAt) < new Date()
   const isEncrypted = transfer.encrypted
-  const canDecrypt = isEncrypted && !!encKeyRaw
-  const keyMissing = isEncrypted && !encKeyRaw
+  const canDecrypt = isEncrypted && !!encKeyRaw && verifiedData === transfer
+  const metadataChecking =
+    isEncrypted && !!encKeyRaw && !integrityError && verifiedData !== transfer
+  const keyMissing = isEncrypted && (!encKeyRaw || !!integrityError)
 
   // While encrypted, never fall back to the raw ciphertext for display.
-  const displayTitle = isEncrypted ? (decryptedMeta.title ?? 'Geteilter Transfer') : (transfer.title || 'Geteilter Transfer')
+  const displayTitle = isEncrypted
+    ? (decryptedMeta.title ?? 'Geteilter Transfer')
+    : transfer.title || 'Geteilter Transfer'
   const displayMessage = isEncrypted ? decryptedMeta.message : transfer.message
 
   return (
@@ -256,7 +463,10 @@ export function DownloadPage() {
       </div>
 
       <div className="relative max-w-xl mx-auto px-4 pt-12 pb-16">
-        <motion.div initial={{ opacity: 0, y: 20 }} animate={{ opacity: 1, y: 0 }}>
+        <motion.div
+          initial={{ opacity: 0, y: 20 }}
+          animate={{ opacity: 1, y: 0 }}
+        >
           {/* Header */}
           <div className="text-center mb-8">
             <div className="w-16 h-16 rounded-2xl bg-gradient-primary flex items-center justify-center mx-auto mb-4">
@@ -266,15 +476,22 @@ export function DownloadPage() {
               {displayTitle}
             </h1>
             {displayMessage && (
-              <p className="text-text-muted text-sm mt-2 italic">"{displayMessage}"</p>
+              <p className="text-text-muted text-sm mt-2 italic">
+                "{displayMessage}"
+              </p>
             )}
             <div className="flex items-center justify-center gap-3 mt-3 flex-wrap">
               <Badge variant={isExpired ? 'danger' : 'success'}>
                 <Clock size={11} className="mr-1" />
-                {isExpired ? 'Abgelaufen' : `Läuft ab ${formatRelative(transfer.expiresAt)}`}
+                {isExpired
+                  ? 'Abgelaufen'
+                  : `Läuft ab ${formatRelative(transfer.expiresAt)}`}
               </Badge>
               <Badge>{formatBytes(transfer.totalSize)}</Badge>
-              <Badge>{transfer.files.length} Datei{transfer.files.length > 1 ? 'en' : ''}</Badge>
+              <Badge>
+                {transfer.files.length} Datei
+                {transfer.files.length > 1 ? 'en' : ''}
+              </Badge>
               {transfer.downloadCount > 0 && (
                 <Badge variant="info">{transfer.downloadCount} Downloads</Badge>
               )}
@@ -294,6 +511,11 @@ export function DownloadPage() {
           </div>
 
           {/* Missing key warning */}
+          {metadataChecking && (
+            <p role="status" className="text-center text-text-muted">
+              Verschlüsselung prüfen…
+            </p>
+          )}
           {keyMissing && (
             <motion.div
               initial={{ opacity: 0, y: 8 }}
@@ -302,9 +524,13 @@ export function DownloadPage() {
             >
               <ShieldOff size={16} className="flex-shrink-0 mt-0.5" />
               <div>
-                <p className="font-medium">Entschlüsselungsschlüssel fehlt</p>
+                <p className="font-medium">
+                  {integrityError || 'Entschlüsselungsschlüssel fehlt'}
+                </p>
                 <p className="text-amber-400/80 mt-0.5 text-xs">
-                  Dieser Transfer ist Ende-zu-Ende verschlüsselt. Der Schlüssel muss im vollständigen Link enthalten sein (#key=…). Frage den Absender nach dem kompletten Link.
+                  Dieser Transfer ist Ende-zu-Ende verschlüsselt. Der Schlüssel
+                  muss im vollständigen Link enthalten sein (#key=…). Frage den
+                  Absender nach dem kompletten Link.
                 </p>
               </div>
             </motion.div>
@@ -313,7 +539,9 @@ export function DownloadPage() {
           {/* Files */}
           <div className="bg-bg-card border border-border rounded-2xl overflow-hidden mb-4">
             <div className="px-4 py-3 border-b border-border flex items-center justify-between">
-              <span className="text-sm font-medium text-text-secondary">Dateien</span>
+              <span className="text-sm font-medium text-text-secondary">
+                Dateien
+              </span>
               {transfer.files.length > 1 && !isExpired && !isEncrypted && (
                 <Button
                   variant="ghost"
@@ -327,62 +555,80 @@ export function DownloadPage() {
             </div>
 
             <div className="divide-y divide-border">
-              {transfer.files.map((file: any, i: number) => {
-                const fileName = getFileName(file.id, isEncrypted ? 'Verschlüsselte Datei' : file.name)
+              {transfer.files.map((file: FileInfo, i: number) => {
+                const fileName = getFileName(
+                  file.id,
+                  isEncrypted ? 'Verschlüsselte Datei' : file.name
+                )
                 const displayPath = getDisplayPath(file, isEncrypted)
                 return (
-                <motion.div
-                  key={file.id}
-                  initial={{ opacity: 0, x: -10 }}
-                  animate={{ opacity: 1, x: 0 }}
-                  transition={{ delay: i * 0.05 }}
-                  className="flex items-center gap-3 px-4 py-3"
-                >
-                  <span className="text-2xl">{getFileIcon(file.mimeType)}</span>
-                  <div className="flex-1 min-w-0">
-                    <p className="text-sm font-medium text-text-primary truncate">{displayPath}</p>
-                    <p className="text-xs text-text-muted">{formatBytes(file.size)}</p>
-                  </div>
-                  {!isExpired && !keyMissing && (
-                    decrypting === file.id ? (
-                      <div className="flex flex-col items-end gap-1 w-36">
-                        <div className="flex items-center justify-between w-full text-xs">
-                          <span className="text-text-muted">
-                            {dlProgress?.phase === 'download' ? 'Herunterladen' : 'Entschlüsseln'}…
-                          </span>
-                          <span className="font-semibold text-text-primary">{dlProgress?.pct ?? 0}%</span>
+                  <motion.div
+                    key={file.id}
+                    initial={{ opacity: 0, x: -10 }}
+                    animate={{ opacity: 1, x: 0 }}
+                    transition={{ delay: i * 0.05 }}
+                    className="flex items-center gap-3 px-4 py-3"
+                  >
+                    <span className="text-2xl">
+                      {getFileIcon(file.mimeType)}
+                    </span>
+                    <div className="flex-1 min-w-0">
+                      <p className="text-sm font-medium text-text-primary truncate">
+                        {displayPath}
+                      </p>
+                      <p className="text-xs text-text-muted">
+                        {formatBytes(file.size)}
+                      </p>
+                    </div>
+                    {!isExpired &&
+                      !keyMissing &&
+                      !metadataChecking &&
+                      (decrypting === file.id ? (
+                        <div className="flex flex-col items-end gap-1 w-36">
+                          <div className="flex items-center justify-between w-full text-xs">
+                            <span className="text-text-muted">
+                              {dlProgress?.phase === 'download'
+                                ? 'Herunterladen'
+                                : 'Entschlüsseln'}
+                              …
+                            </span>
+                            <span className="font-semibold text-text-primary">
+                              {dlProgress?.pct ?? 0}%
+                            </span>
+                          </div>
+                          {dlProgress?.phase === 'download' &&
+                            dlProgress.speed > 0 && (
+                              <p className="text-[10px] text-text-muted self-end leading-none">
+                                {formatBytes(Math.round(dlProgress.speed))}/s
+                              </p>
+                            )}
+                          <div className="w-full h-1 bg-border rounded-full overflow-hidden">
+                            <div
+                              className="h-full bg-primary rounded-full transition-[width] duration-150 ease-out"
+                              style={{ width: `${dlProgress?.pct ?? 0}%` }}
+                            />
+                          </div>
                         </div>
-                        {dlProgress?.phase === 'download' && dlProgress.speed > 0 && (
-                          <p className="text-[10px] text-text-muted self-end leading-none">
-                            {formatBytes(Math.round(dlProgress.speed))}/s
-                          </p>
-                        )}
-                        <div className="w-full h-1 bg-border rounded-full overflow-hidden">
-                          <div
-                            className="h-full bg-primary rounded-full transition-[width] duration-150 ease-out"
-                            style={{ width: `${dlProgress?.pct ?? 0}%` }}
-                          />
-                        </div>
-                      </div>
-                    ) : (
-                      <Button
-                        variant="secondary"
-                        size="sm"
-                        icon={<Download size={13} />}
-                        disabled={decrypting !== null}
-                        onClick={() => handleDownloadFile(file.id, fileName, file.size)}
-                      >
-                        Herunterladen
-                      </Button>
-                    )
-                  )}
-                </motion.div>
+                      ) : (
+                        <Button
+                          variant="secondary"
+                          size="sm"
+                          icon={<Download size={13} />}
+                          disabled={decrypting !== null}
+                          onClick={() =>
+                            handleDownloadFile(file.id, fileName, file.size)
+                          }
+                        >
+                          Herunterladen
+                        </Button>
+                      ))}
+                  </motion.div>
                 )
               })}
             </div>
           </div>
 
-          {!isExpired && !keyMissing && (
+          {!isExpired && !keyMissing && !metadataChecking && (
             <div className="space-y-2">
               <Button
                 className="w-full"
@@ -391,23 +637,31 @@ export function DownloadPage() {
                 disabled={decrypting !== null}
                 onClick={
                   transfer.files.length === 1
-                    ? () => handleDownloadFile(
-                        transfer.files[0].id,
-                        getFileName(transfer.files[0].id, isEncrypted ? 'Verschlüsselte Datei' : transfer.files[0].name),
-                        transfer.files[0].size,
-                      )
+                    ? () =>
+                        handleDownloadFile(
+                          transfer.files[0].id,
+                          getFileName(
+                            transfer.files[0].id,
+                            isEncrypted
+                              ? 'Verschlüsselte Datei'
+                              : transfer.files[0].name
+                          ),
+                          transfer.files[0].size
+                        )
                     : isEncrypted
-                    ? handleDownloadAllEncrypted
-                    : handleDownloadAll
+                      ? handleDownloadAllEncrypted
+                      : handleDownloadAll
                 }
               >
                 {decrypting
                   ? `${dlQueue ? `${dlQueue.current}/${dlQueue.total} – ` : ''}${dlProgress?.phase === 'download' ? 'Herunterladen' : 'Entschlüsseln'}… ${dlProgress?.pct ?? 0}%`
                   : transfer.files.length === 1
-                  ? (isEncrypted ? 'Entschlüsseln & herunterladen' : 'Datei herunterladen')
-                  : isEncrypted
-                  ? 'Alle entschlüsseln & herunterladen'
-                  : 'Alle als ZIP herunterladen'}
+                    ? isEncrypted
+                      ? 'Entschlüsseln & herunterladen'
+                      : 'Datei herunterladen'
+                    : isEncrypted
+                      ? 'Alle entschlüsseln & herunterladen'
+                      : 'Alle als ZIP herunterladen'}
               </Button>
 
               {decrypting && (
@@ -430,7 +684,9 @@ export function DownloadPage() {
 
           {canDecrypt && !hasFilePicker && (
             <p className="text-center text-xs text-text-muted mt-3">
-              Tipp: Chrome/Edge unterstützt direktes Speichern großer Dateien. Bei Firefox/Safari wird die Datei zuerst vollständig im Arbeitsspeicher entschlüsselt.
+              Tipp: Chrome/Edge unterstützt direktes Speichern großer Dateien.
+              Bei Firefox/Safari wird die Datei zuerst vollständig im
+              Arbeitsspeicher entschlüsselt.
             </p>
           )}
 

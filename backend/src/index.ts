@@ -11,8 +11,12 @@ import { settingsRouter } from './routes/settings'
 import { scanRouter } from './routes/scan'
 import { setupRouter } from './routes/setup'
 import { assetsRouter } from './routes/assets'
-import { diagRouter, DIAG_TOKEN } from './routes/diag'
+import { diagRouter } from './routes/diag'
 import { errorHandler } from './middleware/errorHandler'
+import { connectRedis, redisClient } from './lib/rateLimit'
+import { setupToken } from './lib/bootstrap'
+import { csrfProtection } from './middleware/csrf'
+import { startScanWorker } from './services/virusScan'
 import { startCleanupService } from './services/cleanup'
 import { seedSettings } from './services/seed'
 import { ensureBucket } from './lib/minio'
@@ -30,11 +34,18 @@ async function warnIfInsecureDefaults(): Promise<void> {
     if (adminCount === 0) return
 
     const insecure: string[] = []
-    if (!process.env.JWT_SECRET || process.env.JWT_SECRET === 'change-me-to-a-long-random-secret-string') {
+    if (
+      !process.env.JWT_SECRET ||
+      process.env.JWT_SECRET === 'change-me-to-a-long-random-secret-string'
+    ) {
       insecure.push('JWT_SECRET')
     }
-    if (process.env.POSTGRES_PASSWORD === 'change_me_db') insecure.push('POSTGRES_PASSWORD')
-    if (process.env.MINIO_ROOT_PASSWORD === 'change_me_minio' || process.env.MINIO_SECRET_KEY === 'change_me_minio') {
+    if (process.env.POSTGRES_PASSWORD === 'change_me_db')
+      insecure.push('POSTGRES_PASSWORD')
+    if (
+      process.env.MINIO_ROOT_PASSWORD === 'change_me_minio' ||
+      process.env.MINIO_SECRET_KEY === 'change_me_minio'
+    ) {
       insecure.push('MINIO_ROOT_PASSWORD / MINIO_SECRET_KEY')
     }
 
@@ -48,9 +59,14 @@ async function warnIfInsecureDefaults(): Promise<void> {
   }
 }
 
-const app = express()
+export const app = express()
 
-app.set('trust proxy', 1)
+app.set(
+  'trust proxy',
+  (process.env.TRUST_PROXY || 'loopback, linklocal, uniquelocal')
+    .split(',')
+    .map((v) => v.trim())
+)
 
 app.use(
   helmet({
@@ -70,6 +86,7 @@ app.use(
 )
 app.use(express.json({ limit: '1mb' }))
 app.use(cookieParser())
+app.use(csrfProtection)
 
 app.use('/api/setup', setupRouter)
 app.use('/api/auth', authRouter)
@@ -83,24 +100,56 @@ app.use('/api/assets', assetsRouter)
 app.use('/api/diag', diagRouter)
 
 app.get('/api/health', (_, res) => res.json({ ok: true }))
+app.get('/api/ready', async (_req, res) => {
+  try {
+    await prisma.$queryRaw`SELECT 1`
+    await redisClient.ping()
+    await ensureBucket()
+    res.json({ ok: true })
+  } catch {
+    res.status(503).json({ ok: false })
+  }
+})
 
 app.use(errorHandler)
 
 async function start() {
   try {
+    if (
+      config.nodeEnv === 'production' &&
+      (!process.env.JWT_SECRET || process.env.JWT_SECRET.length < 32)
+    )
+      throw new Error(
+        'A random JWT_SECRET of at least 32 characters is required'
+      )
+    await connectRedis()
+    setupToken()
     await ensureBucket()
     await seedSettings()
     await warnIfInsecureDefaults()
-    startCleanupService()
+    const stopCleanup = startCleanupService()
+    const stopScans = startScanWorker()
 
-    app.listen(config.port, async () => {
+    const server = app.listen(config.port, async () => {
       console.log(`ShareDrive backend running on port ${config.port}`)
       await log('info', 'system', `Server started on port ${config.port}`)
     })
+    const shutdown = () => {
+      stopCleanup()
+      stopScans()
+      server.close(() => {
+        void Promise.allSettled([
+          prisma.$disconnect(),
+          redisClient.quit(),
+        ]).then(() => process.exit(0))
+      })
+    }
+    process.once('SIGTERM', shutdown)
+    process.once('SIGINT', shutdown)
   } catch (err) {
     console.error('Failed to start server:', err)
     process.exit(1)
   }
 }
 
-start()
+if (require.main === module) void start()

@@ -1,10 +1,11 @@
+import { withJob } from '../lib/jobs'
 import { Router } from 'express'
 import geoip from 'geoip-lite'
 import { prisma } from '../lib/prisma'
-import { deleteObjects } from '../lib/minio'
+import { deleteTransfer } from '../services/cleanup'
 import { requireAdmin } from '../middleware/auth'
 import { AppError } from '../middleware/errorHandler'
-import { DIAG_TOKEN } from './diag'
+import { diagnosticToken } from './diag'
 import { uploadSessions } from '../lib/uploadSessions'
 import { getActiveDownloads } from '../lib/liveCounters'
 
@@ -31,12 +32,18 @@ router.get('/stats', async (req, res, next) => {
       prisma.transfer.count({ where: { expiresAt: { gt: now } } }),
       prisma.transfer.count({ where: { expiresAt: { lte: now } } }),
       prisma.downloadLog.count({ where: { createdAt: { gte: todayStart } } }),
-      prisma.transfer.aggregate({ _sum: { totalSize: true }, where: { expiresAt: { gt: now } } }),
+      prisma.transfer.aggregate({
+        _sum: { totalSize: true },
+        where: { expiresAt: { gt: now } },
+      }),
       prisma.transfer.findMany({
         where: { expiresAt: { gt: now } },
         orderBy: { createdAt: 'desc' },
         take: 5,
-        include: { files: { select: { id: true } }, user: { select: { username: true } } },
+        include: {
+          files: { select: { id: true } },
+          user: { select: { username: true } },
+        },
       }),
     ])
 
@@ -94,7 +101,11 @@ router.get('/transfers', async (req, res, next) => {
 
     const now = new Date()
     const where: any = {}
-    if (search) where.OR = [{ shortId: { contains: search } }, { title: { contains: search, mode: 'insensitive' } }]
+    if (search)
+      where.OR = [
+        { shortId: { contains: search } },
+        { title: { contains: search, mode: 'insensitive' } },
+      ]
     if (status === 'active') where.expiresAt = { gt: now }
     if (status === 'expired') where.expiresAt = { lte: now }
 
@@ -145,16 +156,7 @@ router.delete('/transfers/:shortId', async (req, res, next) => {
     })
     if (!transfer) throw new AppError('Transfer not found', 404)
 
-    await deleteObjects(transfer.files.map((f) => f.storageKey))
-
-    if (transfer.userId) {
-      await prisma.user.update({
-        where: { id: transfer.userId },
-        data: { storageUsed: { decrement: transfer.totalSize } },
-      })
-    }
-
-    await prisma.transfer.delete({ where: { id: transfer.id } })
+    await deleteTransfer(transfer.id)
     res.json({ success: true })
   } catch (err) {
     next(err)
@@ -174,13 +176,20 @@ router.get('/live-stats', async (req, res, next) => {
         distinct: ['ip'],
       }),
       prisma.log.findMany({
-        where: { category: 'upload', createdAt: { gte: thirtyDaysAgo }, ip: { not: null } },
+        where: {
+          category: 'upload',
+          createdAt: { gte: thirtyDaysAgo },
+          ip: { not: null },
+        },
         select: { ip: true },
       }),
     ])
 
     // Geolocate upload IPs and cluster by rounded lat/lon
-    const clusters = new Map<string, { lat: number; lon: number; city: string; country: string; count: number }>()
+    const clusters = new Map<
+      string,
+      { lat: number; lon: number; city: string; country: string; count: number }
+    >()
     for (const row of uploadLogRows) {
       const ip = (row.ip || '').replace(/^::ffff:/, '')
       const geo = geoip.lookup(ip)
@@ -190,12 +199,18 @@ router.get('/live-stats', async (req, res, next) => {
       if (existing) {
         existing.count++
       } else {
-        clusters.set(key, { lat: geo.ll[0], lon: geo.ll[1], city: geo.city || '', country: geo.country || '', count: 1 })
+        clusters.set(key, {
+          lat: geo.ll[0],
+          lon: geo.ll[1],
+          city: geo.city || '',
+          country: geo.country || '',
+          count: 1,
+        })
       }
     }
 
     res.json({
-      activeUploads: uploadSessions.size,
+      activeUploads: await uploadSessions.count(),
       activeDownloads: getActiveDownloads(),
       visitorsOnline: visitorsResult.length,
       uploadLocations: Array.from(clusters.values()),
@@ -250,14 +265,25 @@ router.get('/users', async (req, res, next) => {
 router.put('/users/:id', async (req, res, next) => {
   try {
     const { role } = req.body
-    if (!['USER', 'ADMIN'].includes(role)) throw new AppError('Invalid role', 400)
+    if (!['USER', 'ADMIN'].includes(role))
+      throw new AppError('Invalid role', 400)
 
-    const user = await prisma.user.update({
-      where: { id: req.params.id },
-      // Bumping tokenVersion invalidates any JWT already issued to this user,
-      // so a role change takes effect immediately instead of after up to 7 days.
-      data: { role, tokenVersion: { increment: 1 } },
-      select: { id: true, email: true, username: true, role: true },
+    const user = await withJob('bootstrap', async (tx) => {
+      const actor = await tx.user.findUnique({ where: { id: req.user!.id } })
+      if (actor?.role !== 'ADMIN')
+        throw new AppError('Admin access required', 403)
+      const target = await tx.user.findUnique({ where: { id: req.params.id } })
+      if (
+        target?.role === 'ADMIN' &&
+        role === 'USER' &&
+        (await tx.user.count({ where: { role: 'ADMIN' } })) <= 1
+      )
+        throw new AppError('Cannot demote the last admin', 409)
+      return tx.user.update({
+        where: { id: req.params.id },
+        data: { role, tokenVersion: { increment: 1 } },
+        select: { id: true, email: true, username: true, role: true },
+      })
     })
     res.json({ user })
   } catch (err) {
@@ -267,7 +293,7 @@ router.put('/users/:id', async (req, res, next) => {
 
 // Return diagnostic token (admin only)
 router.get('/diag-token', (req, res) => {
-  res.json({ token: DIAG_TOKEN })
+  res.json({ token: diagnosticToken(), expiresIn: 300 })
 })
 
 // List logs
@@ -304,8 +330,22 @@ router.get('/logs', async (req, res, next) => {
 // Delete user
 router.delete('/users/:id', async (req, res, next) => {
   try {
-    if (req.params.id === req.user!.id) throw new AppError('Cannot delete yourself', 400)
-    await prisma.user.delete({ where: { id: req.params.id } })
+    if (req.params.id === req.user!.id)
+      throw new AppError('Cannot delete yourself', 400)
+    await withJob('bootstrap', async (tx) => {
+      if (
+        (await tx.user.findUnique({ where: { id: req.user!.id } }))?.role !==
+        'ADMIN'
+      )
+        throw new AppError('Admin access required', 403)
+      const target = await tx.user.findUnique({ where: { id: req.params.id } })
+      if (
+        target?.role === 'ADMIN' &&
+        (await tx.user.count({ where: { role: 'ADMIN' } })) <= 1
+      )
+        throw new AppError('Cannot delete the last admin', 409)
+      await tx.user.delete({ where: { id: req.params.id } })
+    })
     res.json({ success: true })
   } catch (err) {
     next(err)

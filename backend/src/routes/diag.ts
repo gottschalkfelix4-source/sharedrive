@@ -1,79 +1,70 @@
 import { Router } from 'express'
-import crypto from 'crypto'
+import jwt from 'jsonwebtoken'
+import { config } from '../config'
+import { requireAdmin } from '../middleware/auth'
+import { rateLimiter } from '../lib/rateLimit'
+import { AppError } from '../middleware/errorHandler'
 
 const router = Router()
-
-// Stable token derived from JWT_SECRET so it survives restarts but isn't guessable
-export const DIAG_TOKEN = crypto
-  .createHmac('sha256', process.env.JWT_SECRET || 'change-me-in-production')
-  .update('sharedrive-diag-v1')
-  .digest('hex')
-  .slice(0, 32)
-
-function checkToken(req: any, res: any): boolean {
-  const supplied = (req.query.key as string) || req.headers['x-diag-key']
-  if (supplied !== DIAG_TOKEN) {
-    res.status(401).json({ error: 'Invalid or missing diagnostic key' })
-    return false
-  }
-  return true
+export function diagnosticToken(): string {
+  return jwt.sign({ kind: 'diagnostic' }, config.jwtSecret, {
+    algorithm: 'HS256',
+    expiresIn: '5m',
+  })
 }
-
-// GET /api/diag?key=TOKEN
-// Returns all headers, IP info, and server info — useful for verifying reverse proxy setup
+router.use(requireAdmin, rateLimiter('diagnostic', 10, 60_000))
+router.use((req, res, next) => {
+  try {
+    const token = req.get('x-diag-key') || ''
+    const data = jwt.verify(token, config.jwtSecret, {
+      algorithms: ['HS256'],
+    }) as jwt.JwtPayload
+    if (data.kind !== 'diagnostic') throw new Error('Invalid token')
+    res.setHeader('Cache-Control', 'no-store')
+    next()
+  } catch {
+    next(new AppError('Valid diagnostic header required', 401))
+  }
+})
 router.get('/', (req, res) => {
-  if (!checkToken(req, res)) return
-
+  const headers = Object.fromEntries(
+    [
+      'host',
+      'user-agent',
+      'content-type',
+      'content-length',
+      'x-forwarded-for',
+      'x-forwarded-proto',
+    ]
+      .filter((k) => req.get(k))
+      .map((k) => [k, req.get(k)])
+  )
   res.json({
     ok: true,
     timestamp: new Date().toISOString(),
     method: req.method,
-    url: req.originalUrl,
     ip: req.ip,
-    ips: req.ips,
     protocol: req.protocol,
-    headers: req.headers,
+    headers,
     server: {
       nodeVersion: process.version,
-      platform: process.platform,
-      uptime: Math.floor(process.uptime()) + 's',
+      uptime: Math.floor(process.uptime()),
     },
   })
 })
-
-// POST /api/diag/upload?key=TOKEN
-// Streams the request body counting bytes — tests whether large bodies reach the backend
-// Does NOT buffer into memory; safe for multi-GB test payloads
-router.post('/upload', (req, res) => {
-  if (!checkToken(req, res)) return
-
+router.post('/upload', (req, res, next) => {
+  let bytes = 0
   const start = Date.now()
-  let bytesReceived = 0
-
   req.on('data', (chunk: Buffer) => {
-    bytesReceived += chunk.length
+    bytes += chunk.length
+    if (bytes > 100 * 1024 * 1024) {
+      req.destroy()
+      next(new AppError('Diagnostic upload exceeds 100 MiB', 413))
+    }
   })
-
-  req.on('end', () => {
-    const elapsed = Date.now() - start
-    res.json({
-      ok: true,
-      bytesReceived,
-      bytesReceivedMB: (bytesReceived / 1024 / 1024).toFixed(2),
-      elapsedMs: elapsed,
-      throughputMBps: ((bytesReceived / 1024 / 1024) / (elapsed / 1000)).toFixed(2),
-      contentLength: req.headers['content-length'] ?? null,
-      contentType: req.headers['content-type'] ?? null,
-      transferEncoding: req.headers['transfer-encoding'] ?? null,
-      via: req.headers['via'] ?? null,
-      xForwardedFor: req.headers['x-forwarded-for'] ?? null,
-      xRealIp: req.headers['x-real-ip'] ?? null,
-    })
-  })
-
-  req.on('error', (err) => {
-    res.status(500).json({ ok: false, error: err.message, bytesReceived })
-  })
+  req.on('error', next)
+  req.on('end', () =>
+    res.json({ ok: true, bytesReceived: bytes, elapsedMs: Date.now() - start })
+  )
 })
-
 export { router as diagRouter }

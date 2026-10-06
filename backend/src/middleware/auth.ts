@@ -15,6 +15,8 @@ interface AuthTokenPayload {
   email: string
   username: string
   role: string
+  kind?: string
+  twoFactorPending?: boolean
   tokenVersion: number
 }
 
@@ -32,27 +34,58 @@ declare global {
 async function resolveAuthUser(token: string): Promise<AuthUser | null> {
   let payload: AuthTokenPayload
   try {
-    payload = jwt.verify(token, config.jwtSecret) as AuthTokenPayload
+    payload = jwt.verify(token, config.jwtSecret, {
+      algorithms: ['HS256'],
+    }) as AuthTokenPayload
   } catch {
     return null
   }
 
+  if (
+    typeof payload.id !== 'string' ||
+    !Number.isInteger(payload.tokenVersion) ||
+    payload.twoFactorPending ||
+    (payload.kind && payload.kind !== 'session')
+  )
+    return null
   const user = await prisma.user.findUnique({
     where: { id: payload.id },
-    select: { id: true, email: true, username: true, role: true, tokenVersion: true },
+    select: {
+      id: true,
+      email: true,
+      username: true,
+      role: true,
+      tokenVersion: true,
+    },
   })
   if (!user || user.tokenVersion !== payload.tokenVersion) return null
 
-  return { id: user.id, email: user.email, username: user.username, role: user.role }
+  return {
+    id: user.id,
+    email: user.email,
+    username: user.username,
+    role: user.role,
+  }
 }
 
-export async function requireAuth(req: Request, res: Response, next: NextFunction): Promise<void> {
-  const token = req.headers.authorization?.replace('Bearer ', '') || req.cookies?.token
+export async function requireAuth(
+  req: Request,
+  res: Response,
+  next: NextFunction
+): Promise<void> {
+  const token =
+    req.headers.authorization?.replace('Bearer ', '') || req.cookies?.token
   if (!token) {
     res.status(401).json({ error: 'Authentication required' })
     return
   }
-  const user = await resolveAuthUser(token)
+  let user: AuthUser | null
+  try {
+    user = await resolveAuthUser(token)
+  } catch (err) {
+    next(err)
+    return
+  }
   if (!user) {
     res.status(401).json({ error: 'Invalid or expired token' })
     return
@@ -61,8 +94,16 @@ export async function requireAuth(req: Request, res: Response, next: NextFunctio
   next()
 }
 
-export function requireAdmin(req: Request, res: Response, next: NextFunction): void {
-  requireAuth(req, res, () => {
+export function requireAdmin(
+  req: Request,
+  res: Response,
+  next: NextFunction
+): void {
+  void requireAuth(req, res, (err?: unknown) => {
+    if (err) {
+      next(err)
+      return
+    }
     if (req.user?.role !== 'ADMIN') {
       res.status(403).json({ error: 'Admin access required' })
       return
@@ -71,10 +112,21 @@ export function requireAdmin(req: Request, res: Response, next: NextFunction): v
   })
 }
 
-export async function optionalAuth(req: Request, res: Response, next: NextFunction): Promise<void> {
-  const token = req.headers.authorization?.replace('Bearer ', '') || req.cookies?.token
+export async function optionalAuth(
+  req: Request,
+  res: Response,
+  next: NextFunction
+): Promise<void> {
+  const token =
+    req.headers.authorization?.replace('Bearer ', '') || req.cookies?.token
   if (token) {
-    const user = await resolveAuthUser(token)
+    let user: AuthUser | null
+    try {
+      user = await resolveAuthUser(token)
+    } catch (err) {
+      next(err)
+      return
+    }
     if (user) req.user = user
   }
   next()

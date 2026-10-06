@@ -6,23 +6,33 @@ export async function getSetupStatus(): Promise<{ needsSetup: boolean }> {
 }
 
 export async function applyCredentials(data: {
-  dbPassword:    string
+  dbPassword: string
   minioPassword: string
-  jwtSecret:     string
+  jwtSecret: string
 }): Promise<void> {
   await api.post('/setup/credentials', data)
 }
 
-export async function applySSL(domain: string, acmeEmail: string): Promise<{ baseUrl: string }> {
+export async function applySSL(
+  domain: string,
+  acmeEmail: string
+): Promise<{ baseUrl: string }> {
   const res = await api.post('/setup/ssl', { domain, acmeEmail })
   return res.data
 }
 
 export async function runSetup(data: {
-  email:    string
+  email: string
   username: string
   password: string
   baseUrl?: string
 }): Promise<void> {
   await api.post('/setup', data)
+}
+
+export async function getSetupReadiness(): Promise<{
+  ready: boolean
+  requiresRecreation: boolean
+}> {
+  return (await api.get('/setup/readiness')).data
 }

@@ -1,0 +1,14 @@
+.git
+.env
+.env.*
+**/node_modules
+**/dist
+**/*.log
+**/*.tsbuildinfo
+unraid
+docs
+
+.setup
+.setup-token
+**/test-results
+**/playwright-report

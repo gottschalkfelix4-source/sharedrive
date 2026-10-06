@@ -3,191 +3,334 @@ import bcrypt from 'bcryptjs'
 import { z } from 'zod'
 import fs from 'fs'
 import http from 'http'
+import { createHash } from 'crypto'
 import { prisma, reconnectPrisma } from '../lib/prisma'
+import { withJob } from '../lib/jobs'
 import { AppError } from '../middleware/errorHandler'
 import { passwordSchema } from '../lib/validation'
-
-const ENV_PATH = '/app/.env'
+import { requireSetupToken, setEnvVar } from '../lib/bootstrap'
+import { rateLimiter } from '../lib/rateLimit'
+import { ensureBucket, reloadLocalStorage } from '../lib/minio'
 
 const router = Router()
-const CADDYFILE_PATH = '/app/Caddyfile'
-
-async function adminExists(): Promise<boolean> {
-  const count = await prisma.user.count({ where: { role: 'ADMIN' } })
-  return count > 0
+let credentialsRecreationPending = false
+const envPath = () => process.env.ENV_FILE_PATH || '/app/.env'
+const credentialFingerprint = (
+  db = process.env.POSTGRES_PASSWORD || '',
+  minio = process.env.MINIO_SECRET_KEY || '',
+  jwt = process.env.JWT_SECRET || ''
+) =>
+  createHash('sha256')
+    .update(JSON.stringify([db, minio, jwt]))
+    .digest('hex')
+const caddyPath = () => process.env.CADDYFILE_PATH || '/app/Caddyfile'
+const hostname = z
+  .string()
+  .max(253)
+  .regex(
+    /^(?=.{1,253}$)(?:[a-z0-9](?:[a-z0-9-]{0,61}[a-z0-9])?\.)+[a-z](?:[a-z0-9-]{0,61}[a-z0-9])?$/i
+  )
+const credential = z
+  .string()
+  .min(16)
+  .max(256)
+  .refine(
+    (v) => !/[\s\x00\x22\x27\x5c$#]/.test(v),
+    'Whitespace, quotes, backslashes, $ and # are not supported'
+  )
+async function guard(req: Parameters<typeof requireSetupToken>[0]) {
+  requireSetupToken(req)
+  if (await prisma.user.count({ where: { role: 'ADMIN' } }))
+    throw new AppError('Setup already completed', 409)
 }
-
-function buildCaddyfile(domain: string, acmeEmail?: string): string {
-  const emailLine = acmeEmail ? `    email ${acmeEmail}\n` : ''
-  return [
-    '{',
-    '    admin 0.0.0.0:2019 {',
-    '        origins http://localhost http://caddy:2019',
-    '    }',
-    emailLine ? emailLine.trimEnd() : '',
-    '}',
-    '',
-    `${domain} {`,
-    '    reverse_proxy nginx:80',
-    '}',
-    '',
-  ].filter((l, i, a) => !(l === '' && a[i - 1] === '')).join('\n')
-}
-
-// Calls the Caddy Admin API using Node's http module so headers are always sent as-is.
-function caddyLoad(caddyfile: string): Promise<void> {
+async function caddyRequest(
+  path: string,
+  body: string,
+  contentType: string
+): Promise<string> {
   return new Promise((resolve, reject) => {
-    const body = Buffer.from(caddyfile, 'utf8')
     const req = http.request(
       {
-        hostname: 'caddy',
-        port:     2019,
-        path:     '/load',
-        method:   'POST',
-        headers:  {
-          'Content-Type':   'text/caddyfile',
-          'Content-Length': body.length,
-          'Origin':         'http://caddy:2019',
+        hostname: process.env.CADDY_ADMIN_HOST || 'caddy',
+        port: 2019,
+        path,
+        method: 'POST',
+        headers: {
+          'Content-Type': contentType,
+          'Content-Length': Buffer.byteLength(body),
+          Origin: 'http://caddy:2019',
         },
       },
       (res) => {
         let data = ''
-        res.on('data', (chunk: Buffer) => { data += chunk.toString() })
-        res.on('end', () => {
-          if (res.statusCode && res.statusCode < 300) resolve()
-          else reject(new AppError(`Caddy reload fehlgeschlagen: ${data}`, 502))
+        res.on('data', (c) => {
+          data += c
+          if (data.length > 1024 * 1024)
+            req.destroy(new Error('Invalid Caddy response'))
         })
-      },
+        res.on('end', () =>
+          res.statusCode && res.statusCode < 300
+            ? resolve(data)
+            : reject(new AppError('Caddy configuration rejected', 502))
+        )
+      }
     )
+    req.setTimeout(10_000, () => req.destroy(new Error('Caddy timeout')))
     req.on('error', reject)
-    req.write(body)
-    req.end()
+    req.end(body)
   })
 }
-
 router.get('/status', async (_req, res, next) => {
   try {
-    const needsSetup = !(await adminExists())
-    res.json({ needsSetup })
+    res.json({
+      needsSetup: !(await prisma.user.count({ where: { role: 'ADMIN' } })),
+    })
   } catch (err) {
     next(err)
   }
 })
-
-function setEnvVar(content: string, key: string, value: string): string {
-  const regex = new RegExp(`^${key}=.*$`, 'm')
-  return regex.test(content)
-    ? content.replace(regex, `${key}=${value}`)
-    : `${content}\n${key}=${value}`
-}
-
-// Applies new infrastructure credentials: writes .env and changes postgres password live
+router.get('/readiness', async (req, res, next) => {
+  try {
+    await guard(req)
+    const marker = await prisma.setting.findUnique({
+      where: { key: 'setup.credentialsPending' },
+    })
+    const pending =
+      credentialsRecreationPending ||
+      (!!marker && marker.value !== credentialFingerprint())
+    let storageReady = false
+    try {
+      await ensureBucket()
+      storageReady = true
+    } catch {}
+    res.json({ ready: storageReady && !pending, requiresRecreation: pending })
+  } catch (err) {
+    next(err)
+  }
+})
+router.use(rateLimiter('setup', 20, 15 * 60_000))
+// Serialize local changes through client reconnects as well as the DB transaction.
+let setupTail = Promise.resolve()
+router.use((req, res, next) => {
+  if (req.method !== 'POST') {
+    next()
+    return
+  }
+  const previous = setupTail
+  setupTail = new Promise<void>((resolve) => {
+    res.once('finish', resolve)
+    res.once('close', resolve)
+  })
+  void previous.then(() => {
+    if (!res.destroyed) next()
+  })
+})
 router.post('/credentials', async (req, res, next) => {
   try {
-    if (await adminExists()) throw new AppError('Setup already completed', 403)
-
-    const { dbPassword, minioPassword, jwtSecret } = z.object({
-      dbPassword:    z.string().min(8),
-      minioPassword: z.string().min(8),
-      jwtSecret:     z.string().min(16),
-    }).parse(req.body)
-
-    const dbUser = process.env.POSTGRES_USER || 'sharedrive'
-    const dbName = process.env.POSTGRES_DB   || 'sharedrive'
-
-    // 1. Update .env on disk (bind-mounted from host)
-    let envContent = fs.readFileSync(ENV_PATH, 'utf8')
-    envContent = setEnvVar(envContent, 'POSTGRES_PASSWORD', dbPassword)
-    envContent = setEnvVar(envContent, 'DATABASE_URL',
-      `postgresql://${dbUser}:${dbPassword}@postgres:5432/${dbName}`)
-    envContent = setEnvVar(envContent, 'MINIO_ROOT_PASSWORD', minioPassword)
-    envContent = setEnvVar(envContent, 'MINIO_SECRET_KEY',    minioPassword)
-    envContent = setEnvVar(envContent, 'JWT_SECRET',           jwtSecret)
-    fs.writeFileSync(ENV_PATH, envContent, 'utf8')
-
-    // 2. Change postgres password live, then reconnect Prisma with the new URL
-    const escapedPass = dbPassword.replace(/'/g, "''")
-    await prisma.$executeRawUnsafe(
-      `ALTER ROLE "${dbUser}" WITH PASSWORD '${escapedPass}'`
-    )
-    const newDbUrl = `postgresql://${dbUser}:${dbPassword}@postgres:5432/${dbName}`
-    await reconnectPrisma(newDbUrl)
-
-    // 3. Update in-process env so new tokens use new secret
-    process.env.JWT_SECRET           = jwtSecret
-    process.env.MINIO_ROOT_PASSWORD  = minioPassword
-    process.env.MINIO_SECRET_KEY     = minioPassword
-
-    res.json({ ok: true })
+    requireSetupToken(req)
+    if (credentialsRecreationPending)
+      throw new AppError(
+        'Recreate the backend and MinIO before rotating again',
+        409
+      )
+    const { dbPassword, minioPassword, jwtSecret } = z
+      .object({
+        dbPassword: credential,
+        minioPassword: credential,
+        jwtSecret: credential.refine(
+          (v) => v.length >= 32,
+          'JWT secret must contain at least 32 characters'
+        ),
+      })
+      .strict()
+      .parse(req.body)
+    // Serialize the entire operation, including filesystem and process state, with setup.
+    await withJob('bootstrap', async (tx) => {
+      if (await tx.user.count({ where: { role: 'ADMIN' } }))
+        throw new AppError('Setup already completed', 409)
+      const old = fs.readFileSync(envPath(), 'utf8')
+      const dbUser = process.env.POSTGRES_USER || 'sharedrive'
+      if (!/^[A-Za-z_][A-Za-z0-9_]*$/.test(dbUser))
+        throw new AppError('Unsupported database role name', 400)
+      const current = new URL(process.env.DATABASE_URL || '')
+      current.password = dbPassword
+      const url = current.toString()
+      let content = old
+      for (const [key, value] of Object.entries({
+        POSTGRES_PASSWORD: dbPassword,
+        DATABASE_URL: url,
+        MINIO_ROOT_PASSWORD: minioPassword,
+        MINIO_SECRET_KEY: minioPassword,
+        JWT_SECRET: jwtSecret,
+      }))
+        content = setEnvVar(content, key, value)
+      // Keep the bind-mounted inode. DB changes roll back if file persistence fails.
+      const escaped = dbPassword.replace(/'/g, "''")
+      await tx.$executeRawUnsafe(
+        `ALTER ROLE "${dbUser}" WITH PASSWORD '${escaped}'`
+      )
+      try {
+        fs.writeFileSync(envPath(), content, { mode: 0o600 })
+        await tx.setting.upsert({
+          where: { key: 'setup.credentialsPending' },
+          create: {
+            key: 'setup.credentialsPending',
+            value: credentialFingerprint(dbPassword, minioPassword, jwtSecret),
+          },
+          update: {
+            value: credentialFingerprint(dbPassword, minioPassword, jwtSecret),
+          },
+        })
+      } catch (err) {
+        fs.writeFileSync(envPath(), old)
+        throw err
+      }
+    })
+    // The old connection remains valid until this transaction commits.
+    credentialsRecreationPending = true
+    const newUrl = new URL(process.env.DATABASE_URL || '')
+    newUrl.password = dbPassword
+    await reconnectPrisma(newUrl.toString())
+    Object.assign(process.env, {
+      DATABASE_URL: newUrl.toString(),
+      POSTGRES_PASSWORD: dbPassword,
+      JWT_SECRET: jwtSecret,
+      MINIO_SECRET_KEY: minioPassword,
+      MINIO_ROOT_PASSWORD: minioPassword,
+    })
+    reloadLocalStorage()
+    credentialsRecreationPending = true
+    res.json({
+      ok: true,
+      requiresRecreation: true,
+      message:
+        'Recreate MinIO and the backend to load the saved environment before completing setup.',
+    })
   } catch (err) {
     next(err)
   }
 })
-
-// Applies SSL: writes Caddyfile and reloads Caddy via Admin API
 router.post('/ssl', async (req, res, next) => {
   try {
-    if (await adminExists()) throw new AppError('Setup already completed', 403)
-
-    const { domain, acmeEmail } = z.object({
-      domain:    z.string().min(3),
-      acmeEmail: z.string().email().optional().or(z.literal('')),
-    }).parse(req.body)
-
-    const caddyfile = buildCaddyfile(domain, acmeEmail || undefined)
-
-    // Write updated Caddyfile (mounted as bind-mount, shared with Caddy container)
-    fs.writeFileSync(CADDYFILE_PATH, caddyfile, 'utf8')
-
-    // Reload Caddy via Admin API using Node's http module (fetch strips custom headers in some runtimes)
-    await caddyLoad(caddyfile)
-
-    // Save base URL to settings so download links use https://
-    await prisma.setting.upsert({
-      where:  { key: 'app.baseUrl' },
-      update: { value: `https://${domain}` },
-      create: { key: 'app.baseUrl', value: `https://${domain}` },
+    const { domain, acmeEmail } = z
+      .object({
+        domain: hostname,
+        acmeEmail: z.string().email().optional().or(z.literal('')),
+      })
+      .strict()
+      .parse(req.body)
+    await withJob('bootstrap', async (tx) => {
+      requireSetupToken(req)
+      if (await tx.user.count({ where: { role: 'ADMIN' } }))
+        throw new AppError('Setup already completed', 409)
+      const body = `{\n admin 0.0.0.0:2019 {\n origins http://localhost http://caddy:2019\n }\n${acmeEmail ? ` email ${acmeEmail}\n` : ''}}\n${domain} {\n reverse_proxy nginx:80\n}\n`
+      const adapted = await caddyRequest('/adapt', body, 'text/caddyfile')
+      const configuration = JSON.stringify(JSON.parse(adapted).result)
+      const old = fs.readFileSync(caddyPath(), 'utf8')
+      // Validate before persisting, retain old config for rollback.
+      fs.writeFileSync(caddyPath(), body)
+      try {
+        await caddyRequest('/load', configuration, 'application/json')
+        await tx.setting.upsert({
+          where: { key: 'app.baseUrl' },
+          create: { key: 'app.baseUrl', value: `https://${domain}` },
+          update: { value: `https://${domain}` },
+        })
+      } catch (err) {
+        fs.writeFileSync(caddyPath(), old)
+        await caddyRequest('/load', old, 'text/caddyfile').catch(() => {})
+        throw err
+      }
     })
-
     res.json({ ok: true, baseUrl: `https://${domain}` })
   } catch (err) {
     next(err)
   }
 })
-
-const setupSchema = z.object({
-  email:    z.string().email(),
-  username: z.string().min(3).max(32).regex(/^[a-zA-Z0-9_-]+$/),
-  password: passwordSchema,
-  baseUrl:  z.string().url().optional(),
-})
-
 router.post('/', async (req, res, next) => {
   try {
-    if (await adminExists()) throw new AppError('Setup already completed', 409)
-
-    const { email, username, password, baseUrl } = setupSchema.parse(req.body)
-
-    if (baseUrl) {
-      await prisma.setting.upsert({
-        where:  { key: 'app.baseUrl' },
-        update: { value: baseUrl.replace(/\/$/, '') },
-        create: { key: 'app.baseUrl', value: baseUrl.replace(/\/$/, '') },
+    requireSetupToken(req)
+    const { email, username, password, baseUrl } = z
+      .object({
+        email: z.string().email(),
+        username: z
+          .string()
+          .min(3)
+          .max(32)
+          .regex(/^[a-zA-Z0-9_-]+$/),
+        password: passwordSchema,
+        baseUrl: z
+          .string()
+          .url()
+          .refine((v) => {
+            const u = new URL(v)
+            return (
+              ['http:', 'https:'].includes(u.protocol) &&
+              !u.username &&
+              !u.password &&
+              !u.search &&
+              !u.hash
+            )
+          })
+          .optional(),
       })
-    }
-
+      .strict()
+      .parse(req.body)
     const passwordHash = await bcrypt.hash(password, 12)
-    const user = await prisma.user.create({
-      data: { email, username, password: passwordHash, role: 'ADMIN', emailVerified: true },
+    // Credentials must actually work; the saved file alone is not readiness evidence.
+    if (credentialsRecreationPending)
+      throw new AppError(
+        'Recreate the backend and MinIO before completing setup',
+        409
+      )
+    const user = await withJob('bootstrap', async (tx) => {
+      if (await tx.user.count({ where: { role: 'ADMIN' } }))
+        throw new AppError('Setup already completed', 409)
+      const marker = await tx.setting.findUnique({
+        where: { key: 'setup.credentialsPending' },
+      })
+      if (
+        credentialsRecreationPending ||
+        (marker && marker.value !== credentialFingerprint())
+      )
+        throw new AppError(
+          'Recreate the backend and MinIO before completing setup',
+          409
+        )
+      await ensureBucket()
+      const user = await tx.user.create({
+        data: {
+          email,
+          username,
+          password: passwordHash,
+          role: 'ADMIN',
+          emailVerified: true,
+        },
+      })
+      if (baseUrl)
+        await tx.setting.upsert({
+          where: { key: 'app.baseUrl' },
+          create: { key: 'app.baseUrl', value: baseUrl.replace(/\/$/, '') },
+          update: { value: baseUrl.replace(/\/$/, '') },
+        })
+      await tx.setting.deleteMany({
+        where: { key: 'setup.credentialsPending' },
+      })
+      return user
     })
-
-    res.status(201).json({
-      message: 'Admin account created successfully',
-      user: { id: user.id, email: user.email, username: user.username, role: user.role },
-    })
+    res
+      .status(201)
+      .json({
+        message: 'Admin account created',
+        user: {
+          id: user.id,
+          email: user.email,
+          username: user.username,
+          role: user.role,
+        },
+      })
   } catch (err) {
     next(err)
   }
 })
-
 export { router as setupRouter }

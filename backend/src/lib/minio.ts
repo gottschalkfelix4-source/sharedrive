@@ -4,7 +4,7 @@ import { config } from '../config'
 import { prisma } from './prisma'
 
 // Default/local storage — always available, used as fallback and for site assets.
-export const minioClient = new Minio.Client({
+export let minioClient = new Minio.Client({
   endPoint: config.minio.endpoint,
   port: config.minio.port,
   useSSL: config.minio.useSSL,
@@ -57,7 +57,11 @@ async function resolveActiveStorage(): Promise<ActiveStorage> {
   const s: Record<string, string> = { ...DEFAULT_S3_SETTINGS }
   for (const r of rows) s[r.key] = r.value
 
-  if (s['storage.s3Enabled'] !== 'true' || !s['storage.s3Endpoint'] || !s['storage.s3Bucket']) {
+  if (
+    s['storage.s3Enabled'] !== 'true' ||
+    !s['storage.s3Endpoint'] ||
+    !s['storage.s3Bucket']
+  ) {
     return { client: minioClient, bucket: config.minio.bucket }
   }
 
@@ -85,10 +89,13 @@ async function getActiveStorage(): Promise<ActiveStorage> {
 }
 
 // Verifies a candidate S3 connection without affecting the active storage backend.
-export async function testS3Connection(opts: S3ConnectionOptions): Promise<void> {
+export async function testS3Connection(
+  opts: S3ConnectionOptions
+): Promise<void> {
   const client = buildClient(opts)
   const exists = await client.bucketExists(opts.bucket)
-  if (!exists) throw new Error('Bucket nicht gefunden oder keine Zugriffsrechte')
+  if (!exists)
+    throw new Error('Bucket nicht gefunden oder keine Zugriffsrechte')
 }
 
 export async function ensureBucket(): Promise<void> {
@@ -105,12 +112,82 @@ export async function uploadStream(
   mimeType: string
 ): Promise<void> {
   const { client, bucket } = await getActiveStorage()
-  await client.putObject(bucket, key, stream, undefined, {
-    'Content-Type': mimeType,
-  })
+  // The SDK's unknown-length stream helper loses source errors and cannot finish
+  // empty streams. Consume the source ourselves with bounded multipart buffers.
+  const partSize = 16 * 1024 * 1024
+  let buffer: Buffer | undefined
+  let buffered = 0
+  let uploadId: string | undefined
+  const parts: { part: number; etag: string }[] = []
+  const sendPart = async (bytes: Buffer) => {
+    uploadId ??= await client.initiateNewMultipartUpload(bucket, key, {
+      'Content-Type': mimeType,
+    })
+    if (parts.length >= 10000) throw new Error('Multipart part limit exceeded')
+    parts.push(
+      await client.uploadPart(
+        {
+          bucketName: bucket,
+          objectName: key,
+          uploadID: uploadId,
+          partNumber: parts.length + 1,
+          headers: { 'content-length': String(bytes.length) },
+        },
+        bytes
+      )
+    )
+  }
+  try {
+    for await (const value of stream) {
+      const chunk = Buffer.isBuffer(value) ? value : Buffer.from(value)
+      let offset = 0
+      while (offset < chunk.length) {
+        buffer ??= Buffer.allocUnsafe(partSize)
+        const length = Math.min(partSize - buffered, chunk.length - offset)
+        chunk.copy(buffer, buffered, offset, offset + length)
+        buffered += length
+        offset += length
+        if (buffered === partSize) {
+          await sendPart(buffer)
+          buffered = 0
+        }
+      }
+    }
+    if (!uploadId) {
+      await client.putObject(
+        bucket,
+        key,
+        buffer?.subarray(0, buffered) ?? Buffer.alloc(0),
+        buffered,
+        {
+          'Content-Type': mimeType,
+        }
+      )
+    } else {
+      if (buffered) await sendPart(buffer!.subarray(0, buffered))
+      await client.completeMultipartUpload(bucket, key, uploadId, parts)
+    }
+  } catch (err) {
+    if (uploadId) {
+      try {
+        await client.abortMultipartUpload(bucket, key, uploadId)
+      } catch {
+        // Keep a durable retry if object storage is unavailable during abort.
+        const { enqueueDeletion } = await import('../services/cleanup')
+        await enqueueDeletion([{ key, uploadId }]).catch(() =>
+          console.error('Failed to persist multipart cleanup retry')
+        )
+      }
+    }
+    stream.destroy()
+    throw err
+  }
 }
 
-export async function getPresignedDownloadUrl(key: string, filename: string): Promise<string> {
+export async function getPresignedDownloadUrl(
+  key: string,
+  filename: string
+): Promise<string> {
   const { client, bucket } = await getActiveStorage()
   return client.presignedGetObject(bucket, key, 3600, {
     'response-content-disposition': `attachment; filename="${encodeURIComponent(filename)}"`,
@@ -129,7 +206,7 @@ export async function deleteObjects(keys: string[]): Promise<void> {
     try {
       await client.removeObject(bucket, key)
     } catch (err) {
-      console.error(`Failed to delete object ${key}:`, err)
+      throw err
     }
   }
 }
@@ -140,7 +217,10 @@ export async function getObjectStream(key: string): Promise<Readable> {
   return stream as unknown as Readable
 }
 
-export async function initiateMultipartUpload(key: string, mimeType: string): Promise<string> {
+export async function initiateMultipartUpload(
+  key: string,
+  mimeType: string
+): Promise<string> {
   const { client, bucket } = await getActiveStorage()
   return client.initiateNewMultipartUpload(bucket, key, {
     'Content-Type': mimeType,
@@ -151,7 +231,7 @@ export async function uploadFilePart(
   key: string,
   uploadId: string,
   partNumber: number,
-  data: Buffer,
+  data: Buffer
 ): Promise<{ etag: string; part: number }> {
   const { client, bucket } = await getActiveStorage()
   return client.uploadPart(
@@ -162,25 +242,44 @@ export async function uploadFilePart(
       partNumber,
       headers: { 'content-length': String(data.length) },
     },
-    data,
+    data
   )
 }
 
 export async function completeFileParts(
   key: string,
   uploadId: string,
-  parts: { part: number; etag: string }[],
+  parts: { part: number; etag: string }[]
 ): Promise<void> {
   const { client, bucket } = await getActiveStorage()
   await client.completeMultipartUpload(
     bucket,
     key,
     uploadId,
-    parts.slice().sort((a, b) => a.part - b.part),
+    parts.slice().sort((a, b) => a.part - b.part)
   )
 }
 
-export async function abortMultipartUpload(key: string, uploadId: string): Promise<void> {
+export async function abortMultipartUpload(
+  key: string,
+  uploadId: string
+): Promise<void> {
   const { client, bucket } = await getActiveStorage()
   await client.abortMultipartUpload(bucket, key, uploadId)
+}
+
+export async function statStoredObject(key: string): Promise<number> {
+  const { client, bucket } = await getActiveStorage()
+  return (await client.statObject(bucket, key)).size
+}
+
+export function reloadLocalStorage(): void {
+  minioClient = new Minio.Client({
+    endPoint: config.minio.endpoint,
+    port: config.minio.port,
+    useSSL: config.minio.useSSL,
+    accessKey: config.minio.accessKey,
+    secretKey: config.minio.secretKey,
+  })
+  cachedStorage = null
 }

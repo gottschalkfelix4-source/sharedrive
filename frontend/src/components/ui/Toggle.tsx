@@ -8,19 +8,30 @@ interface ToggleProps {
   disabled?: boolean
 }
 
-export function Toggle({ checked, onChange, label, description, disabled }: ToggleProps) {
+export function Toggle({
+  checked,
+  onChange,
+  label,
+  description,
+  disabled,
+}: ToggleProps) {
   return (
     <div className="flex items-center justify-between gap-4">
       {(label || description) && (
         <div>
-          {label && <p className="text-sm font-medium text-text-primary">{label}</p>}
-          {description && <p className="text-xs text-text-muted mt-0.5">{description}</p>}
+          {label && (
+            <p className="text-sm font-medium text-text-primary">{label}</p>
+          )}
+          {description && (
+            <p className="text-xs text-text-muted mt-0.5">{description}</p>
+          )}
         </div>
       )}
       <button
         type="button"
         role="switch"
         aria-checked={checked}
+        aria-label={label || description || 'Option aktivieren'}
         disabled={disabled}
         onClick={() => onChange(!checked)}
         className={cn(

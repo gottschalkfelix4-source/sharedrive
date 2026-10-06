@@ -1,0 +1,89 @@
+# Application containers are managed by the two Unraid XML templates.
+# This file manages only their dependencies, on the same external network.
+name: sharedrive-unraid
+
+services:
+  postgres:
+    image: postgres:16.10-alpine@sha256:029660641a0cfc575b14f336ba448fb8a75fd595d42e1fa316b9fb4378742297
+    env_file: ${SHAREDRIVE_APPDATA:-/mnt/user/appdata/sharedrive}/.env
+    volumes:
+      - ${SHAREDRIVE_APPDATA:-/mnt/user/appdata/sharedrive}/postgres:/var/lib/postgresql/data
+    healthcheck:
+      test: [CMD-SHELL, 'pg_isready -U "$${POSTGRES_USER}" -d "$${POSTGRES_DB}"']
+      interval: 5s
+      timeout: 5s
+      retries: 20
+    restart: unless-stopped
+    networks: [sharedrive]
+
+  redis:
+    image: redis:7.4.5-alpine@sha256:bb186d083732f669da90be8b0f975a37812b15e913465bb14d845db72a4e3e08
+    command: [redis-server, --appendonly, 'yes']
+    volumes:
+      - ${SHAREDRIVE_APPDATA:-/mnt/user/appdata/sharedrive}/redis:/data
+    healthcheck:
+      test: [CMD, redis-cli, ping]
+      interval: 5s
+      timeout: 5s
+      retries: 20
+    restart: unless-stopped
+    networks: [sharedrive]
+
+  minio:
+    image: ${MINIO_IMAGE:-sharedrive-minio:unraid}
+    build:
+      context: ..
+      dockerfile: unraid/Dockerfile.minio
+    command: server /data --console-address ":9001"
+    env_file: ${SHAREDRIVE_APPDATA:-/mnt/user/appdata/sharedrive}/.env
+    volumes:
+      - ${SHAREDRIVE_APPDATA:-/mnt/user/appdata/sharedrive}/minio:/data
+    healthcheck:
+      test: [CMD, curl, -fsS, http://localhost:9000/minio/health/ready]
+      interval: 10s
+      timeout: 5s
+      retries: 30
+    restart: unless-stopped
+    networks: [sharedrive]
+
+  clamav:
+    mem_limit: 3g
+    cpus: 2
+    image: clamav/clamav:1.4.3@sha256:75fb5fd95fcbe1d7e6d240c369c1572b686ee2c95949d1042b5148de8eddebb4
+    environment:
+      CLAMD_CONF_StreamMaxLength: 6144M
+      CLAMD_CONF_MaxFileSize: 6144M
+      CLAMD_CONF_MaxScanSize: 6144M
+      CLAMD_CONF_AlertExceedsMax: "yes"
+      CLAMD_CONF_TCPSocket: 3310
+      CLAMD_CONF_TCPAddr: "0.0.0.0"
+    volumes:
+      - ${SHAREDRIVE_APPDATA:-/mnt/user/appdata/sharedrive}/clamav:/var/lib/clamav
+    healthcheck:
+      test: [CMD, clamdscan, --ping, '1']
+      interval: 30s
+      timeout: 10s
+      start_period: 5m
+      retries: 10
+    restart: unless-stopped
+    networks: [sharedrive]
+
+  caddy:
+    environment:
+      CADDY_TRUSTED_PROXIES: ${CADDY_TRUSTED_PROXIES:-127.0.0.1/32}
+    image: caddy:2.10.2-alpine@sha256:4c6e91c6ed0e2fa03efd5b44747b625fec79bc9cd06ac5235a779726618e530d
+    ports:
+      - "${HTTP_PORT:-8088}:80"
+      - "${HTTPS_PORT:-8443}:443"
+      - "${HTTPS_PORT:-8443}:443/udp"
+    volumes:
+      - ${SHAREDRIVE_APPDATA:-/mnt/user/appdata/sharedrive}/Caddyfile:/etc/caddy/Caddyfile
+      - ${SHAREDRIVE_APPDATA:-/mnt/user/appdata/sharedrive}/caddy/data:/data
+      - ${SHAREDRIVE_APPDATA:-/mnt/user/appdata/sharedrive}/caddy/config:/config
+    restart: unless-stopped
+    networks: [sharedrive]
+
+networks:
+  sharedrive:
+    external: true
+    name: sharedrive

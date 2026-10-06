@@ -1,31 +1,123 @@
 import { Routes, Route, Navigate } from 'react-router-dom'
-import { useEffect, useState } from 'react'
+import { useEffect, useState, lazy, Suspense } from 'react'
 import { Navbar } from '@/components/layout/Navbar'
 import { Footer } from '@/components/layout/Footer'
-import { HomePage } from '@/pages/HomePage'
-import { DownloadPage } from '@/pages/DownloadPage'
-import { PrivacyPage } from '@/pages/PrivacyPage'
-import { ImprintPage } from '@/pages/ImprintPage'
-import { LoginPage } from '@/pages/auth/LoginPage'
-import { RegisterPage } from '@/pages/auth/RegisterPage'
-import { VerifyEmailPage } from '@/pages/auth/VerifyEmailPage'
-import { ForgotPasswordPage } from '@/pages/auth/ForgotPasswordPage'
-import { ResetPasswordPage } from '@/pages/auth/ResetPasswordPage'
-import { SetupPage } from '@/pages/SetupPage'
-import { DashboardPage } from '@/pages/dashboard/DashboardPage'
-import { AccountSettingsPage } from '@/pages/account/AccountSettingsPage'
-import { AdminLayout } from '@/pages/admin/AdminLayout'
-import { AdminDashboardPage } from '@/pages/admin/AdminDashboardPage'
-import { AdminFilesPage } from '@/pages/admin/AdminFilesPage'
-import { AdminUsersPage } from '@/pages/admin/AdminUsersPage'
-import { AdminLogsPage } from '@/pages/admin/AdminLogsPage'
-import { SettingsLayout } from '@/pages/admin/settings/SettingsLayout'
-import { GeneralSettings } from '@/pages/admin/settings/GeneralSettings'
-import { StorageSettings } from '@/pages/admin/settings/StorageSettings'
-import { EmailSettings } from '@/pages/admin/settings/EmailSettings'
-import { SecuritySettings } from '@/pages/admin/settings/SecuritySettings'
-import { AppearanceSettings } from '@/pages/admin/settings/AppearanceSettings'
-import { PrivacySettings } from '@/pages/admin/settings/PrivacySettings'
+const HomePage = lazy(() =>
+  import('@/pages/HomePage').then((module) => ({ default: module.HomePage }))
+)
+const DownloadPage = lazy(() =>
+  import('@/pages/DownloadPage').then((module) => ({
+    default: module.DownloadPage,
+  }))
+)
+const PrivacyPage = lazy(() =>
+  import('@/pages/PrivacyPage').then((module) => ({
+    default: module.PrivacyPage,
+  }))
+)
+const ImprintPage = lazy(() =>
+  import('@/pages/ImprintPage').then((module) => ({
+    default: module.ImprintPage,
+  }))
+)
+const LoginPage = lazy(() =>
+  import('@/pages/auth/LoginPage').then((module) => ({
+    default: module.LoginPage,
+  }))
+)
+const RegisterPage = lazy(() =>
+  import('@/pages/auth/RegisterPage').then((module) => ({
+    default: module.RegisterPage,
+  }))
+)
+const VerifyEmailPage = lazy(() =>
+  import('@/pages/auth/VerifyEmailPage').then((module) => ({
+    default: module.VerifyEmailPage,
+  }))
+)
+const ForgotPasswordPage = lazy(() =>
+  import('@/pages/auth/ForgotPasswordPage').then((module) => ({
+    default: module.ForgotPasswordPage,
+  }))
+)
+const ResetPasswordPage = lazy(() =>
+  import('@/pages/auth/ResetPasswordPage').then((module) => ({
+    default: module.ResetPasswordPage,
+  }))
+)
+const SetupPage = lazy(() =>
+  import('@/pages/SetupPage').then((module) => ({ default: module.SetupPage }))
+)
+const DashboardPage = lazy(() =>
+  import('@/pages/dashboard/DashboardPage').then((module) => ({
+    default: module.DashboardPage,
+  }))
+)
+const AccountSettingsPage = lazy(() =>
+  import('@/pages/account/AccountSettingsPage').then((module) => ({
+    default: module.AccountSettingsPage,
+  }))
+)
+const AdminLayout = lazy(() =>
+  import('@/pages/admin/AdminLayout').then((module) => ({
+    default: module.AdminLayout,
+  }))
+)
+const AdminDashboardPage = lazy(() =>
+  import('@/pages/admin/AdminDashboardPage').then((module) => ({
+    default: module.AdminDashboardPage,
+  }))
+)
+const AdminFilesPage = lazy(() =>
+  import('@/pages/admin/AdminFilesPage').then((module) => ({
+    default: module.AdminFilesPage,
+  }))
+)
+const AdminUsersPage = lazy(() =>
+  import('@/pages/admin/AdminUsersPage').then((module) => ({
+    default: module.AdminUsersPage,
+  }))
+)
+const AdminLogsPage = lazy(() =>
+  import('@/pages/admin/AdminLogsPage').then((module) => ({
+    default: module.AdminLogsPage,
+  }))
+)
+const SettingsLayout = lazy(() =>
+  import('@/pages/admin/settings/SettingsLayout').then((module) => ({
+    default: module.SettingsLayout,
+  }))
+)
+const GeneralSettings = lazy(() =>
+  import('@/pages/admin/settings/GeneralSettings').then((module) => ({
+    default: module.GeneralSettings,
+  }))
+)
+const StorageSettings = lazy(() =>
+  import('@/pages/admin/settings/StorageSettings').then((module) => ({
+    default: module.StorageSettings,
+  }))
+)
+const EmailSettings = lazy(() =>
+  import('@/pages/admin/settings/EmailSettings').then((module) => ({
+    default: module.EmailSettings,
+  }))
+)
+const SecuritySettings = lazy(() =>
+  import('@/pages/admin/settings/SecuritySettings').then((module) => ({
+    default: module.SecuritySettings,
+  }))
+)
+const AppearanceSettings = lazy(() =>
+  import('@/pages/admin/settings/AppearanceSettings').then((module) => ({
+    default: module.AppearanceSettings,
+  }))
+)
+const PrivacySettings = lazy(() =>
+  import('@/pages/admin/settings/PrivacySettings').then((module) => ({
+    default: module.PrivacySettings,
+  }))
+)
 import { useAuthStore } from '@/store/authStore'
 import { getMe } from '@/api/auth'
 import { getSetupStatus } from '@/api/setup'
@@ -107,47 +199,137 @@ export default function App() {
   }
 
   return (
-    <div className="min-h-screen bg-bg font-sans">
-      <Routes>
-        {/* First-time setup (no navbar) */}
-        <Route path="/setup" element={<SetupPage />} />
+    <Suspense
+      fallback={
+        <div role="status" className="p-12 flex justify-center">
+          <Spinner />
+        </div>
+      }
+    >
+      <div className="min-h-screen bg-bg font-sans">
+        <Routes>
+          {/* First-time setup (no navbar) */}
+          <Route path="/setup" element={<SetupPage />} />
 
-        {/* Admin routes — own layout, no top navbar */}
-        <Route path="/admin" element={<AdminLayout />}>
-          <Route index element={<AdminDashboardPage />} />
-          <Route path="files" element={<AdminFilesPage />} />
-          <Route path="users" element={<AdminUsersPage />} />
-          <Route path="logs" element={<AdminLogsPage />} />
-          <Route path="settings" element={<SettingsLayout />}>
-            <Route index element={<GeneralSettings />} />
-            <Route path="storage" element={<StorageSettings />} />
-            <Route path="email" element={<EmailSettings />} />
-            <Route path="security" element={<SecuritySettings />} />
-            <Route path="appearance" element={<AppearanceSettings />} />
-            <Route path="privacy" element={<PrivacySettings />} />
+          {/* Admin routes — own layout, no top navbar */}
+          <Route path="/admin" element={<AdminLayout />}>
+            <Route index element={<AdminDashboardPage />} />
+            <Route path="files" element={<AdminFilesPage />} />
+            <Route path="users" element={<AdminUsersPage />} />
+            <Route path="logs" element={<AdminLogsPage />} />
+            <Route path="settings" element={<SettingsLayout />}>
+              <Route index element={<GeneralSettings />} />
+              <Route path="storage" element={<StorageSettings />} />
+              <Route path="email" element={<EmailSettings />} />
+              <Route path="security" element={<SecuritySettings />} />
+              <Route path="appearance" element={<AppearanceSettings />} />
+              <Route path="privacy" element={<PrivacySettings />} />
+            </Route>
           </Route>
-        </Route>
 
-        {/* Public routes with navbar */}
-        <Route path="/" element={<WithNavbar><HomePage /></WithNavbar>} />
-        <Route path="/d/:shortId" element={<WithNavbar><DownloadPage /></WithNavbar>} />
-        <Route path="/datenschutz" element={<WithNavbar><PrivacyPage /></WithNavbar>} />
-        <Route path="/impressum" element={<WithNavbar><ImprintPage /></WithNavbar>} />
-        <Route path="/login" element={<WithNavbar><LoginPage /></WithNavbar>} />
-        <Route path="/register" element={<WithNavbar><RegisterPage /></WithNavbar>} />
-        <Route path="/verify-email" element={<WithNavbar><VerifyEmailPage /></WithNavbar>} />
-        <Route path="/forgot-password" element={<WithNavbar><ForgotPasswordPage /></WithNavbar>} />
-        <Route path="/reset-password" element={<WithNavbar><ResetPasswordPage /></WithNavbar>} />
-        <Route
-          path="/dashboard"
-          element={<WithNavbar><RequireAuth><DashboardPage /></RequireAuth></WithNavbar>}
-        />
-        <Route
-          path="/account"
-          element={<WithNavbar><RequireAuth><AccountSettingsPage /></RequireAuth></WithNavbar>}
-        />
-        <Route path="*" element={<WithNavbar><NotFoundPage /></WithNavbar>} />
-      </Routes>
-    </div>
+          {/* Public routes with navbar */}
+          <Route
+            path="/"
+            element={
+              <WithNavbar>
+                <HomePage />
+              </WithNavbar>
+            }
+          />
+          <Route
+            path="/d/:shortId"
+            element={
+              <WithNavbar>
+                <DownloadPage />
+              </WithNavbar>
+            }
+          />
+          <Route
+            path="/datenschutz"
+            element={
+              <WithNavbar>
+                <PrivacyPage />
+              </WithNavbar>
+            }
+          />
+          <Route
+            path="/impressum"
+            element={
+              <WithNavbar>
+                <ImprintPage />
+              </WithNavbar>
+            }
+          />
+          <Route
+            path="/login"
+            element={
+              <WithNavbar>
+                <LoginPage />
+              </WithNavbar>
+            }
+          />
+          <Route
+            path="/register"
+            element={
+              <WithNavbar>
+                <RegisterPage />
+              </WithNavbar>
+            }
+          />
+          <Route
+            path="/verify-email"
+            element={
+              <WithNavbar>
+                <VerifyEmailPage />
+              </WithNavbar>
+            }
+          />
+          <Route
+            path="/forgot-password"
+            element={
+              <WithNavbar>
+                <ForgotPasswordPage />
+              </WithNavbar>
+            }
+          />
+          <Route
+            path="/reset-password"
+            element={
+              <WithNavbar>
+                <ResetPasswordPage />
+              </WithNavbar>
+            }
+          />
+          <Route
+            path="/dashboard"
+            element={
+              <WithNavbar>
+                <RequireAuth>
+                  <DashboardPage />
+                </RequireAuth>
+              </WithNavbar>
+            }
+          />
+          <Route
+            path="/account"
+            element={
+              <WithNavbar>
+                <RequireAuth>
+                  <AccountSettingsPage />
+                </RequireAuth>
+              </WithNavbar>
+            }
+          />
+          <Route
+            path="*"
+            element={
+              <WithNavbar>
+                <NotFoundPage />
+              </WithNavbar>
+            }
+          />
+        </Routes>
+      </div>
+    </Suspense>
   )
 }

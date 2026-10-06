@@ -1,0 +1,101 @@
+name: Build and regression tests
+on: [push, pull_request]
+permissions:
+  contents: read
+jobs:
+  frontend:
+    runs-on: ubuntu-24.04
+    steps:
+      - uses: actions/checkout@v5
+      - uses: actions/setup-node@v5
+        with:
+          node-version: '24'
+          cache: npm
+          cache-dependency-path: frontend/package-lock.json
+      - run: npm ci
+        working-directory: frontend
+      - run: npm run build && npm test && npm audit --omit=dev --audit-level=high
+        working-directory: frontend
+      - run: npx playwright install --with-deps chromium
+        working-directory: frontend
+      - run: npm run test:browser
+        working-directory: frontend
+  backend:
+    runs-on: ubuntu-24.04
+    env:
+      DATABASE_URL: postgresql://postgres:fixture-test-only@127.0.0.1:5432/sharedrive_test
+      REDIS_URL: redis://127.0.0.1:6379/15
+      JWT_SECRET: ci-fixture-jwt-secret-at-least-32-characters
+    services:
+      postgres:
+        image: postgres:16.10-alpine
+        env:
+          POSTGRES_PASSWORD: fixture-test-only
+          POSTGRES_DB: sharedrive_test
+        ports: ['5432:5432']
+        options: --health-cmd "pg_isready -U postgres" --health-interval 5s --health-timeout 5s --health-retries 20
+      redis:
+        image: redis:7.4.5-alpine
+        ports: ['6379:6379']
+        options: --health-cmd "redis-cli ping" --health-interval 5s --health-timeout 5s --health-retries 20
+    steps:
+      - uses: actions/checkout@v5
+      - uses: actions/setup-node@v5
+        with:
+          node-version: '24'
+          cache: npm
+          cache-dependency-path: backend/package-lock.json
+      - run: npm ci && npx prisma generate && npx prisma migrate deploy
+        working-directory: backend
+      - run: npm run build && npm test && npm run test:database && npm audit --omit=dev --audit-level=high
+        working-directory: backend
+  storage-integration:
+    runs-on: ubuntu-24.04
+    timeout-minutes: 45
+    env:
+      DATABASE_URL: postgresql://postgres:fixture-test-only@127.0.0.1:5432/sharedrive_test
+      REDIS_URL: redis://127.0.0.1:6379/15
+      JWT_SECRET: ci-fixture-jwt-secret-at-least-32-characters
+      SETUP_TOKEN: ci-fixture-setup-token-at-least-32-characters
+      MINIO_ENDPOINT: 127.0.0.1
+      MINIO_PORT: '19000'
+      MINIO_USE_SSL: 'false'
+      MINIO_ACCESS_KEY: ci-minio
+      MINIO_SECRET_KEY: ci-fixture-minio-password
+      MINIO_BUCKET: sharedrive-ci-test
+      CLAMAV_HOST: 127.0.0.1
+      CLAMAV_PORT: '13310'
+    services:
+      postgres:
+        image: postgres:16.10-alpine
+        env:
+          POSTGRES_PASSWORD: fixture-test-only
+          POSTGRES_DB: sharedrive_test
+        ports: ['5432:5432']
+        options: --health-cmd "pg_isready -U postgres" --health-interval 5s --health-timeout 5s --health-retries 20
+      redis:
+        image: redis:7.4.5-alpine
+        ports: ['6379:6379']
+        options: --health-cmd "redis-cli ping" --health-interval 5s --health-timeout 5s --health-retries 20
+    steps:
+      - uses: actions/checkout@v5
+      - uses: actions/setup-node@v5
+        with:
+          node-version: '24'
+      - name: Build official MinIO source and start test services
+        run: |
+          set -euo pipefail
+          docker build -t sharedrive-minio:ci -f unraid/Dockerfile.minio .
+          docker run -d --name sharedrive-ci-minio -p 127.0.0.1:19000:9000 -e MINIO_ROOT_USER=ci-minio -e MINIO_ROOT_PASSWORD=ci-fixture-minio-password sharedrive-minio:ci
+          docker run -d --name sharedrive-ci-clamav -p 127.0.0.1:13310:3310 clamav/clamav:1.4.3
+          ready=false
+          for attempt in {1..100}; do
+            if curl -fsS http://127.0.0.1:19000/minio/health/ready && docker exec sharedrive-ci-clamav clamdscan --ping 1; then ready=true; break; fi
+            sleep 3
+          done
+          test "$ready" = true
+      - run: npm ci && npx prisma generate && npx prisma migrate deploy && npm run test:integration
+        working-directory: backend
+      - name: Service logs on failure
+        if: failure()
+        run: docker logs sharedrive-ci-minio; docker logs sharedrive-ci-clamav

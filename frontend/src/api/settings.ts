@@ -11,7 +11,9 @@ export async function getAllSettings(): Promise<AllSettings> {
   return res.data.settings
 }
 
-export async function updateSettings(settings: Record<string, string>): Promise<void> {
+export async function updateSettings(
+  settings: Record<string, string>
+): Promise<void> {
   await api.put('/settings', { settings })
 }
 
@@ -33,7 +35,10 @@ export async function testS3Connection(payload: S3TestPayload): Promise<void> {
   await api.post('/settings/test-s3', payload)
 }
 
-export async function uploadAsset(type: 'logo' | 'favicon', file: File): Promise<string> {
+export async function uploadAsset(
+  type: 'logo' | 'favicon',
+  file: File
+): Promise<string> {
   const form = new FormData()
   form.append('file', file)
   const res = await api.post(`/assets/upload?type=${type}`, form, {
@@ -46,7 +51,11 @@ export async function deleteAsset(type: 'logo' | 'favicon'): Promise<void> {
   await api.delete(`/assets/${type}`)
 }
 
-export async function getDiskStats(): Promise<{ total: number; used: number; free: number; pct: number; nextExpiryAt: string | null }> {
+export async function getDiskStats(): Promise<{
+  used: string
+  nextExpiryAt: string | null
+  source: string
+}> {
   const res = await api.get('/settings/disk-stats')
   return res.data
 }

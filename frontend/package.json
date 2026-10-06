@@ -5,7 +5,9 @@
   "scripts": {
     "dev": "vite",
     "build": "tsc && vite build",
-    "preview": "vite preview"
+    "preview": "vite preview",
+    "test": "tsx --test tests/e2e.test.ts",
+    "test:browser": "playwright test"
   },
   "dependencies": {
     "@tanstack/react-query": "^5.18.1",
@@ -21,18 +23,26 @@
     "react-dropzone": "^14.2.3",
     "react-hot-toast": "^2.4.1",
     "react-leaflet": "^4.2.1",
-    "react-router-dom": "^6.22.0",
+    "react-router-dom": "^7.18.4",
     "recharts": "^2.12.0",
     "zustand": "^4.5.0"
   },
   "devDependencies": {
+    "@playwright/test": "^1.63.0",
     "@types/react": "^18.2.55",
     "@types/react-dom": "^18.2.19",
-    "@vitejs/plugin-react": "^4.2.1",
+    "@vitejs/plugin-react": "^4.7.0",
     "autoprefixer": "^10.4.17",
     "postcss": "^8.4.35",
     "tailwindcss": "^3.4.1",
+    "tsx": "^4.23.15",
     "typescript": "^5.3.3",
-    "vite": "^5.1.0"
+    "vite": "^6.4.4"
+  },
+  "overrides": {
+    "postcss-selector-parser": "^7.1.6"
+  },
+  "engines": {
+    "node": ">=24 <25"
   }
 }

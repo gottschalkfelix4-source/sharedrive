@@ -1,41 +1,52 @@
+import { PersistentMap } from './jobs'
+
 export interface UploadPart {
   part: number
   etag: string
+  bytes: number
 }
-
 export interface FileSession {
   uploadId: string
   storageKey: string
   filename: string
+  fileIndex: number
   relativePath?: string
   mimeType: string
   declaredSize: number
   parts: UploadPart[]
+  completed?: boolean
 }
-
 export interface TransferSession {
   shortId: string
   userId: string | null
-  files: Map<string, FileSession>   // fileToken → FileSession
+  files: Record<string, FileSession>
   meta: {
     title?: string
     message?: string
     passwordHash: string | null
-    expiresAt: Date
+    expiresAt: string
     notifyEmail?: string
     maxDownloads?: number | null
   }
   maxTransferSizeBytes: number
+  totalSize: number
   encrypted: boolean
-  createdAt: Date
-}
-
-export const uploadSessions = new Map<string, TransferSession>()
-
-// Clean up sessions older than 2 hours every 30 min
-setInterval(() => {
-  const cutoff = Date.now() - 2 * 60 * 60 * 1000
-  for (const [key, session] of uploadSessions) {
-    if (session.createdAt.getTime() < cutoff) uploadSessions.delete(key)
+  encryptionVersion: number
+  encryptedManifest?: string
+  encryptionContext?: string
+  state: 'uploading' | 'finalizing' | 'published'
+  result?: {
+    status: number
+    body:
+      | {
+          shortId: string
+          expiresAt: string
+          fileCount: number
+          totalSize: string
+          virusScanned: boolean
+        }
+      | { scanId: string }
   }
-}, 30 * 60 * 1000).unref()
+  createdAt: string
+}
+export const uploadSessions = new PersistentMap<TransferSession>('upload')

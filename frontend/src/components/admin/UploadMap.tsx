@@ -1,5 +1,6 @@
-import { useEffect } from 'react'
-import { MapContainer, TileLayer, CircleMarker, Tooltip } from 'react-leaflet'
+import world from '@/assets/world.json'
+import type { GeoJsonObject } from 'geojson'
+import { MapContainer, CircleMarker, Tooltip, GeoJSON } from 'react-leaflet'
 import L from 'leaflet'
 import 'leaflet/dist/leaflet.css'
 
@@ -30,10 +31,14 @@ export function UploadMap({ locations }: Props) {
       scrollWheelZoom={false}
       worldCopyJump
     >
-      <TileLayer
-        attribution='&copy; <a href="https://carto.com/">CARTO</a>'
-        url="https://{s}.basemaps.cartocdn.com/dark_all/{z}/{x}/{y}{r}.png"
-        subdomains="abcd"
+      <GeoJSON
+        data={world as GeoJsonObject}
+        style={{
+          color: '#40445c',
+          weight: 0.7,
+          fillColor: '#1e2238',
+          fillOpacity: 1,
+        }}
       />
       {locations.map((loc, i) => (
         <CircleMarker
@@ -49,8 +54,10 @@ export function UploadMap({ locations }: Props) {
         >
           <Tooltip direction="top" offset={[0, -4]}>
             <span className="text-xs">
-              {loc.city ? `${loc.city}, ` : ''}{loc.country || 'Unbekannt'}
-              {' · '}{loc.count} Upload{loc.count !== 1 ? 's' : ''}
+              {loc.city ? `${loc.city}, ` : ''}
+              {loc.country || 'Unbekannt'}
+              {' · '}
+              {loc.count} Upload{loc.count !== 1 ? 's' : ''}
             </span>
           </Tooltip>
         </CircleMarker>

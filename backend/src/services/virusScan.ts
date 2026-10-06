@@ -1,135 +1,226 @@
 import { prisma } from '../lib/prisma'
-import { getObjectStream, deleteObjects } from '../lib/minio'
+import { getObjectStream } from '../lib/minio'
 import { scanReadable } from '../lib/clamav'
+import { scanSessions, PendingTransfer } from '../lib/scanSessions'
+import { randomUUID } from 'crypto'
+import { Transaction, json, withJob } from '../lib/jobs'
+import { releaseQuota } from '../lib/quota'
 import { log } from './logger'
-import { scanSessions } from '../lib/scanSessions'
-import type { PendingTransfer } from '../lib/scanSessions'
-import { sendUploadConfirmationEmail } from './email'
+import { enqueueDeletion } from './cleanup'
+import { notifyPublished } from './published'
 
-export function createScanSession(scanId: string, pending: PendingTransfer): void {
-  scanSessions.set(scanId, {
+export async function createScanSession(
+  scanId: string,
+  pending: PendingTransfer,
+  tx: Transaction = prisma
+): Promise<void> {
+  await scanSessions.set(
     scanId,
-    pending,
-    scannedBytes: 0,
-    currentFile: pending.files[0]?.name ?? null,
-    phase: 'streaming',
-    status: 'scanning',
-    createdAt: new Date(),
+    {
+      scanId,
+      pending,
+      scannedBytes: 0,
+      currentFile: null,
+      phase: 'streaming',
+      status: 'scanning',
+      createdAt: new Date(),
+    },
+    tx
+  )
+}
+export async function publishTransfer(
+  pending: PendingTransfer,
+  scanned: boolean,
+  tx: Transaction = prisma
+) {
+  const transfer = await tx.transfer.create({
+    data: {
+      shortId: pending.shortId,
+      userId: pending.userId,
+      title: pending.title,
+      message: pending.message,
+      passwordHash: pending.passwordHash,
+      expiresAt: new Date(pending.expiresAt),
+      notifyEmail: pending.notifyEmail,
+      maxDownloads: pending.maxDownloads ?? null,
+      totalSize: BigInt(pending.totalSize),
+      encrypted: pending.encrypted ?? false,
+      virusScanned: scanned,
+      encryptedManifest: pending.encryptedManifest,
+      encryptionVersion: pending.encryptionVersion ?? 1,
+      encryptionContext: pending.encryptionContext,
+      files: {
+        create: pending.files.map((f) => ({
+          name: f.name,
+          encryptionIndex: f.encryptionIndex,
+          relativePath: f.relativePath,
+          size: BigInt(f.size),
+          storedSize: BigInt(f.storedSize ?? f.size),
+          mimeType: f.mimeType,
+          storageKey: f.storageKey,
+        })),
+      },
+    },
+    include: { files: true },
   })
+  await releaseQuota(tx, pending.userId, pending.totalSize, true)
+  return {
+    shortId: transfer.shortId,
+    expiresAt: transfer.expiresAt,
+    fileCount: transfer.files.length,
+    totalSize: transfer.totalSize.toString(),
+    virusScanned: scanned,
+  }
 }
 
-// Scans every file of a pending transfer sequentially via clamd, then either
-// creates the Transfer record (all clean) or deletes the uploaded objects
-// (infected / scan error). Runs detached from the HTTP request that kicked it off
-// — progress and the final outcome are read back via GET /api/scan/:scanId.
-export async function runTransferScan(scanId: string, ip?: string): Promise<void> {
-  const session = scanSessions.get(scanId)
+// A bounded durable worker; leases recover interrupted scans after a process restart.
+export async function runTransferScan(scanId: string): Promise<void> {
+  const owner = randomUUID()
+  const claimed = await prisma.job.updateMany({
+    where: {
+      id: scanId,
+      kind: 'scan',
+      status: 'pending',
+      expiresAt: { gt: new Date() },
+      OR: [{ leaseUntil: null }, { leaseUntil: { lt: new Date() } }],
+    },
+    data: { leaseOwner: owner, leaseUntil: new Date(Date.now() + 120_000) },
+  })
+  if (!claimed.count) return
+  const session = await scanSessions.get(scanId)
   if (!session) return
-  const { pending } = session
-
+  session.scannedBytes = 0
+  const save = async () => {
+    const updated = await prisma.job.updateMany({
+      where: { id: scanId, status: 'pending', leaseOwner: owner },
+      data: { payload: json(session) },
+    })
+    if (!updated.count) throw new Error('Scan lease lost')
+  }
+  const heartbeat = setInterval(() => {
+    void prisma.job
+      .updateMany({
+        where: { id: scanId, status: 'pending', leaseOwner: owner },
+        data: { leaseUntil: new Date(Date.now() + 120_000) },
+      })
+      .catch(() => {})
+  }, 30_000)
+  let progressSaving: Promise<void> | undefined
+  const progressTimer = setInterval(() => {
+    if (!progressSaving)
+      progressSaving = save()
+        .catch(() => {})
+        .finally(() => {
+          progressSaving = undefined
+        })
+  }, 1000)
   try {
-    let scannedSoFar = 0
-    for (const file of pending.files) {
+    for (const file of session.pending.files) {
       session.currentFile = file.name
-      session.phase = 'streaming'
+      await save()
       const stream = await getObjectStream(file.storageKey)
-      const baseline = scannedSoFar
-      const result = await scanReadable(stream, (scannedBytes, phase) => {
-        session.scannedBytes = baseline + scannedBytes
+      const baseline = session.scannedBytes
+      session.phase = 'streaming'
+      const result = await scanReadable(stream, (bytes, phase) => {
+        session.scannedBytes = baseline + bytes
         session.phase = phase
       })
-      scannedSoFar += file.size
-      session.scannedBytes = scannedSoFar
-
+      if (progressSaving) await progressSaving
       if (!result.clean) {
-        await deleteObjects(pending.files.map((f) => f.storageKey))
-
-        if (result.virus) {
-          session.status = 'infected'
-          session.virus = result.virus
-          session.infectedFile = file.name
-          await log(
-            'warn',
-            'security',
-            `Virus found in upload "${file.name}" (transfer ${pending.shortId}): ${result.virus}`,
-            { userId: pending.userId ?? undefined, ip }
-          )
-        } else {
-          session.status = 'error'
-          session.errorMessage = result.error || 'Virenscan fehlgeschlagen'
-          await log(
-            'error',
-            'security',
-            `Virus scan error for transfer ${pending.shortId}: ${result.error}`,
-            { userId: pending.userId ?? undefined, ip }
-          )
-        }
-        return
+        if (!result.virus) throw new Error('Scanner temporarily unavailable')
+        session.status = 'infected'
+        session.virus = result.virus
+        session.infectedFile = result.virus ? file.name : undefined
+        session.errorMessage = result.error
+        break
       }
+      session.scannedBytes = baseline + file.size
+      await save()
     }
-
-    const transfer = await prisma.transfer.create({
-      data: {
-        shortId: pending.shortId,
-        userId: pending.userId,
-        title: pending.title,
-        message: pending.message,
-        passwordHash: pending.passwordHash,
-        expiresAt: pending.expiresAt,
-        notifyEmail: pending.notifyEmail,
-        maxDownloads: pending.maxDownloads ?? null,
-        totalSize: BigInt(pending.totalSize),
-        encrypted: false,
-        virusScanned: true,
-        files: {
-          create: pending.files.map((f) => ({
-            name: f.name,
-            relativePath: f.relativePath,
-            size: BigInt(f.size),
-            mimeType: f.mimeType,
-            storageKey: f.storageKey,
-          })),
-        },
-      },
-      include: { files: true },
-    })
-
-    if (pending.userId) {
-      await prisma.user.update({
-        where: { id: pending.userId },
-        data: { storageUsed: { increment: BigInt(pending.totalSize) } },
+    clearInterval(progressTimer)
+    if (progressSaving) await progressSaving
+    const committed = await withJob(scanId, async (tx) => {
+      const job = await tx.job.findUnique({ where: { id: scanId } })
+      if (!job || job.status !== 'pending' || job.leaseOwner !== owner)
+        return false
+      if (session.status === 'scanning') {
+        session.result = await publishTransfer(session.pending, true, tx)
+        session.status = 'clean'
+      } else {
+        await enqueueDeletion(
+          session.pending.files.map((f) => ({ key: f.storageKey })),
+          tx
+        )
+        await releaseQuota(
+          tx,
+          session.pending.userId,
+          session.pending.totalSize
+        )
+      }
+      await scanSessions.set(scanId, session, tx)
+      await tx.job.update({
+        where: { id: scanId },
+        data: { status: 'done', leaseUntil: null, leaseOwner: null },
       })
-    }
-
+      return true
+    })
+    if (!committed) return
     await log(
-      'info',
-      'upload',
-      `Transfer uploaded: ${transfer.shortId} — ${transfer.files.length} file(s), ` +
-        `${(pending.totalSize / 1024 / 1024).toFixed(1)} MB (virus-scanned)`,
-      { userId: pending.userId ?? undefined, ip }
+      session.status === 'clean' ? 'info' : 'warn',
+      'security',
+      `Transfer scan ${session.status}: ${session.pending.shortId}`
     )
-
-    session.status = 'clean'
-    session.result = {
-      shortId: transfer.shortId,
-      expiresAt: transfer.expiresAt,
-      fileCount: transfer.files.length,
-      totalSize: pending.totalSize.toString(),
-      virusScanned: true,
-    }
-
-    if (pending.notifyEmail) {
-      sendUploadConfirmationEmail(pending.notifyEmail, transfer.shortId, transfer.title ?? null, transfer.expiresAt).catch(console.error)
-    }
+    if (session.status === 'clean')
+      void notifyPublished(session.pending.shortId, session.pending.ip).catch(
+        () => {}
+      )
   } catch (err) {
-    await deleteObjects(pending.files.map((f) => f.storageKey)).catch(() => {})
-    session.status = 'error'
-    session.errorMessage = (err as Error).message || 'Virenscan fehlgeschlagen'
+    // Keep the job and quota reservation for retry rather than publishing or losing it.
     await log(
       'error',
       'security',
-      `Virus scan crashed for transfer ${pending.shortId}: ${session.errorMessage}`,
-      { userId: pending.userId ?? undefined, ip }
+      `Scan job temporarily unavailable: ${scanId}`
     )
+    await prisma.job.updateMany({
+      where: { id: scanId, status: 'pending', leaseOwner: owner },
+      data: { leaseUntil: new Date(Date.now() + 60_000) },
+    })
+  } finally {
+    clearInterval(heartbeat)
+    clearInterval(progressTimer)
   }
+}
+
+export function startScanWorker(): () => void {
+  const active = new Set<string>()
+  let polling = false
+  const poll = async () => {
+    if (polling || active.size >= 2) return
+    polling = true
+    try {
+      const jobs = await prisma.job.findMany({
+        where: {
+          kind: 'scan',
+          status: 'pending',
+          expiresAt: { gt: new Date() },
+          OR: [{ leaseUntil: null }, { leaseUntil: { lt: new Date() } }],
+        },
+        take: 2 - active.size,
+        orderBy: { createdAt: 'asc' },
+      })
+      for (const job of jobs) {
+        active.add(job.id)
+        void runTransferScan(job.id)
+          .catch(console.error)
+          .finally(() => active.delete(job.id))
+      }
+    } catch (err) {
+      console.error('Scan worker poll failed')
+    } finally {
+      polling = false
+    }
+  }
+  const timer = setInterval(() => void poll(), 2000)
+  void poll()
+  return () => clearInterval(timer)
 }

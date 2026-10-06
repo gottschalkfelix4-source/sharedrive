@@ -1,40 +1,31 @@
 import { create } from 'zustand'
 import type { User } from '../types'
-
-function parseJwt(token: string): Partial<User> | null {
-  try {
-    const payload = JSON.parse(atob(token.split('.')[1]))
-    return { id: payload.id, email: payload.email, username: payload.username, role: payload.role }
-  } catch {
-    return null
-  }
-}
-
-function getInitialUser(token: string | null): User | null {
-  if (!token) return null
-  const parsed = parseJwt(token)
-  if (!parsed?.id || !parsed?.email || !parsed?.username || !parsed?.role) return null
-  return { ...parsed, storageUsed: '0', createdAt: '' } as User
-}
-
-const storedToken = localStorage.getItem('token')
-
+// Only a non-secret presence flag is retained. The JWT lives in an HttpOnly cookie.
+localStorage.removeItem('token')
 interface AuthState {
   user: User | null
   token: string | null
   setAuth: (user: User, token: string) => void
   clearAuth: () => void
 }
-
 export const useAuthStore = create<AuthState>((set) => ({
-  user: getInitialUser(storedToken),
-  token: storedToken,
-  setAuth: (user, token) => {
-    localStorage.setItem('token', token)
-    set({ user, token })
+  user: null,
+  token: localStorage.getItem('session') ? 'cookie-session' : null,
+  setAuth: (user, _token) => {
+    localStorage.setItem('session', '1')
+    set({ user, token: 'cookie-session' })
   },
   clearAuth: () => {
-    localStorage.removeItem('token')
+    localStorage.removeItem('session')
+    const csrf =
+      document.cookie
+        .split('; ')
+        .find((v) => v.startsWith('csrf='))
+        ?.slice(5) || ''
+    void fetch('/api/auth/logout', {
+      method: 'POST',
+      headers: { 'x-csrf-token': decodeURIComponent(csrf) },
+    }).catch(() => {})
     set({ user: null, token: null })
   },
 }))

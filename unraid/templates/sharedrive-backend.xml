@@ -1,0 +1,23 @@
+<?xml version="1.0" encoding="utf-8"?>
+<Container version="2">
+  <Name>ShareDrive-Backend</Name>
+  <Repository>sharedrive-backend:unraid</Repository>
+  <Registry/>
+  <Network>sharedrive</Network>
+  <MyIP/>
+  <Shell>sh</Shell>
+  <Privileged>false</Privileged>
+  <Support>https://github.com/gottschalkfelix4-source/sharedrive/issues</Support>
+  <Project>https://github.com/gottschalkfelix4-source/sharedrive</Project>
+  <Overview>ShareDrive API. Build the local sharedrive-backend:unraid image first using the README's Unraid instructions. Requires the sharedrive Docker network and PostgreSQL, Redis, MinIO and ClamAV. No backend port is published. The existing .env and Caddyfile must be regular files before applying this template. Startup applies versioned database migrations; baseline legacy db-push installations and back up before upgrades. Runs as UID/GID 1000.</Overview>
+  <Category>Network:Other Productivity:</Category>
+  <WebUI/>
+  <TemplateURL>https://raw.githubusercontent.com/gottschalkfelix4-source/sharedrive/master/unraid/templates/sharedrive-backend.xml</TemplateURL>
+  <ExtraParams>--network-alias=backend --env-file=/mnt/user/appdata/sharedrive/.env --restart=unless-stopped --memory=1g --cpus=2</ExtraParams>
+  <PostArgs/>
+  <Config Name="Environment file" Target="/app/.env" Default="/mnt/user/appdata/sharedrive/.env" Mode="rw" Description="Existing .env file. Keep the host path in Extra Parameters (--env-file) in sync if you change this path. The setup wizard writes infrastructure credentials here." Type="Path" Display="always" Required="true" Mask="false">/mnt/user/appdata/sharedrive/.env</Config>
+  <Config Name="Caddy configuration" Target="/app/Caddyfile" Default="/mnt/user/appdata/sharedrive/Caddyfile" Mode="rw" Description="Existing writable Caddyfile, also used by the infrastructure stack." Type="Path" Display="always" Required="true" Mask="false">/mnt/user/appdata/sharedrive/Caddyfile</Config>
+  <Config Name="Setup token directory" Target="/app/.setup" Default="/mnt/user/appdata/sharedrive/.setup" Mode="rw" Description="Private persistent setup token; owner UID/GID 1000, directory 0700 and token 0600." Type="Path" Display="always" Required="true" Mask="false">/mnt/user/appdata/sharedrive/.setup</Config>
+  <Config Name="Node environment" Target="NODE_ENV" Default="production" Mode="" Description="Production security settings." Type="Variable" Display="advanced" Required="true" Mask="false">production</Config>
+  <Config Name="API port" Target="PORT" Default="3000" Mode="" Description="Internal port expected by nginx; no host port mapping is needed." Type="Variable" Display="advanced" Required="true" Mask="false">3000</Config>
+</Container>

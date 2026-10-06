@@ -1,20 +1,38 @@
-import { useState } from 'react'
+import { useState, useRef, useEffect } from 'react'
 import { motion, AnimatePresence } from 'framer-motion'
-import { Shield, Zap, Globe, ArrowRight, ShieldCheck, HardDrive, AlertCircle } from 'lucide-react'
+import {
+  Shield,
+  Zap,
+  Globe,
+  ArrowRight,
+  ShieldCheck,
+  HardDrive,
+  AlertCircle,
+} from 'lucide-react'
 import { useQuery } from '@tanstack/react-query'
 import { UploadZone } from '@/components/upload/UploadZone'
 import { UploadOptions } from '@/components/upload/UploadOptions'
 import { UploadProgress } from '@/components/upload/UploadProgress'
-import { VirusScanProgress, VirusScanResult } from '@/components/upload/VirusScanProgress'
+import {
+  VirusScanProgress,
+  VirusScanResult,
+} from '@/components/upload/VirusScanProgress'
 import { SuccessScreen } from '@/components/upload/SuccessScreen'
 import { Button } from '@/components/ui/Button'
 import { Card } from '@/components/ui/Card'
 import { MatrixRain } from '@/components/effects/MatrixRain'
 import { LockAnimation } from '@/components/effects/LockAnimation'
 import { Toggle } from '@/components/ui/Toggle'
-import { uploadTransfer, VirusFoundError, ScanError, type UploadOptions as UOpts } from '@/api/transfers'
+import {
+  uploadTransfer,
+  VirusFoundError,
+  ScanError,
+  type UploadOptions as UOpts,
+} from '@/api/transfers'
 import { getDiskStats } from '@/api/settings'
 import toast from 'react-hot-toast'
+import type { TransferUploadResult } from '@/types'
+import { formatBytes } from '@/lib/utils'
 
 type Phase = 'idle' | 'uploading' | 'scanning' | 'blocked' | 'success'
 
@@ -36,9 +54,21 @@ const defaultOptions = {
 }
 
 const features = [
-  { icon: <Zap size={20} />, title: 'Blitzschnell', desc: 'Direkt in sicheren Speicher gestreamt' },
-  { icon: <Shield size={20} />, title: 'Sicher & privat', desc: 'Optionaler Passwortschutz' },
-  { icon: <Globe size={20} />, title: 'Überall teilen', desc: 'Einfacher Link, kein Konto nötig' },
+  {
+    icon: <Zap size={20} />,
+    title: 'Blitzschnell',
+    desc: 'Direkt in sicheren Speicher gestreamt',
+  },
+  {
+    icon: <Shield size={20} />,
+    title: 'Sicher & privat',
+    desc: 'Optionaler Passwortschutz',
+  },
+  {
+    icon: <Globe size={20} />,
+    title: 'Überall teilen',
+    desc: 'Einfacher Link, kein Konto nötig',
+  },
 ]
 
 function formatTimeUntil(iso: string): string {
@@ -48,9 +78,11 @@ function formatTimeUntil(iso: string): string {
   const days = Math.floor(totalMinutes / 1440)
   const hours = Math.floor((totalMinutes % 1440) / 60)
   const minutes = totalMinutes % 60
-  if (days > 0 && hours > 0) return `in ${days} Tag${days > 1 ? 'en' : ''} und ${hours} Stunde${hours > 1 ? 'n' : ''}`
+  if (days > 0 && hours > 0)
+    return `in ${days} Tag${days > 1 ? 'en' : ''} und ${hours} Stunde${hours > 1 ? 'n' : ''}`
   if (days > 0) return `in ${days} Tag${days > 1 ? 'en' : ''}`
-  if (hours > 0 && minutes > 0) return `in ${hours} Stunde${hours > 1 ? 'n' : ''} und ${minutes} Minute${minutes > 1 ? 'n' : ''}`
+  if (hours > 0 && minutes > 0)
+    return `in ${hours} Stunde${hours > 1 ? 'n' : ''} und ${minutes} Minute${minutes > 1 ? 'n' : ''}`
   if (hours > 0) return `in ${hours} Stunde${hours > 1 ? 'n' : ''}`
   return `in ${minutes} Minute${minutes !== 1 ? 'n' : ''}`
 }
@@ -62,15 +94,23 @@ export function HomePage() {
     staleTime: 30_000,
   })
 
-  const diskFull = (diskStats?.pct ?? 0) >= 95
-
+  const uploadController = useRef<AbortController | null>(null)
+  useEffect(() => () => uploadController.current?.abort(), [])
   const [files, setFiles] = useState<File[]>([])
   const [options, setOptions] = useState(defaultOptions)
   const [phase, setPhase] = useState<Phase>('idle')
-  const [progress, setProgress] = useState({ percent: 0, speed: '0 KB/s', eta: '…' })
-  const [scanProgress, setScanProgress] = useState({ percent: 0, currentFile: null as string | null, phase: 'streaming' as 'streaming' | 'analyzing' })
+  const [progress, setProgress] = useState({
+    percent: 0,
+    speed: '0 KB/s',
+    eta: '…',
+  })
+  const [scanProgress, setScanProgress] = useState({
+    percent: 0,
+    currentFile: null as string | null,
+    phase: 'streaming' as 'streaming' | 'analyzing',
+  })
   const [scanError, setScanError] = useState<ScanErrorState | null>(null)
-  const [result, setResult] = useState<any>(null)
+  const [result, setResult] = useState<TransferUploadResult | null>(null)
   const [showLockAnim, setShowLockAnim] = useState(false)
 
   const handleFilesAdded = (newFiles: File[]) => {
@@ -81,7 +121,10 @@ export function HomePage() {
     setFiles((prev) => prev.filter((_, idx) => idx !== i))
   }
 
-  const handleOptionChange = (key: string, value: string | number | boolean) => {
+  const handleOptionChange = (
+    key: string,
+    value: string | number | boolean
+  ) => {
     if (key === 'encrypted' && value === true) setShowLockAnim(true)
     setOptions((prev) => ({ ...prev, [key]: value }))
   }
@@ -92,11 +135,16 @@ export function HomePage() {
       return
     }
     setPhase('uploading')
+    uploadController.current = new AbortController()
     try {
       const res = await uploadTransfer(files, {
         ...options,
-        maxDownloads: options.maxDownloads ? parseInt(options.maxDownloads) : undefined,
-        onProgress: (percent, speed, eta) => setProgress({ percent, speed, eta }),
+        signal: uploadController.current.signal,
+        maxDownloads: options.maxDownloads
+          ? parseInt(options.maxDownloads)
+          : undefined,
+        onProgress: (percent, speed, eta) =>
+          setProgress({ percent, speed, eta }),
         onScanProgress: (percent, currentFile, scanPhase) => {
           setPhase('scanning')
           setScanProgress({ percent, currentFile, phase: scanPhase })
@@ -105,8 +153,15 @@ export function HomePage() {
       setResult(res)
       setPhase('success')
     } catch (err: any) {
-      if (err instanceof VirusFoundError) {
-        setScanError({ type: 'infected', virus: err.virus, infectedFile: err.infectedFile })
+      if (uploadController.current?.signal.aborted) {
+        toast('Upload abgebrochen')
+        setPhase('idle')
+      } else if (err instanceof VirusFoundError) {
+        setScanError({
+          type: 'infected',
+          virus: err.virus,
+          infectedFile: err.infectedFile,
+        })
         setPhase('blocked')
       } else if (err instanceof ScanError) {
         setScanError({ type: 'error', message: err.message })
@@ -153,7 +208,8 @@ export function HomePage() {
             </span>
           </h1>
           <p className="text-text-muted mt-4 text-lg">
-            Dateien ablegen und in Sekunden einen teilbaren Link erhalten. Kein Konto erforderlich.
+            Dateien ablegen und in Sekunden einen teilbaren Link erhalten. Kein
+            Konto erforderlich.
           </p>
         </motion.div>
 
@@ -164,7 +220,19 @@ export function HomePage() {
           transition={{ delay: 0.1 }}
           className="relative bg-bg-card border border-border rounded-2xl p-6 shadow-card overflow-hidden"
         >
-          <LockAnimation show={showLockAnim} onComplete={() => setShowLockAnim(false)} />
+          <LockAnimation
+            show={showLockAnim}
+            onComplete={() => setShowLockAnim(false)}
+          />
+          {phase === 'uploading' && (
+            <Button
+              variant="secondary"
+              className="mb-4"
+              onClick={() => uploadController.current?.abort()}
+            >
+              Upload abbrechen
+            </Button>
+          )}
           <AnimatePresence mode="wait">
             {phase === 'idle' && (
               <motion.div
@@ -174,24 +242,6 @@ export function HomePage() {
                 exit={{ opacity: 0 }}
                 className="space-y-4"
               >
-                {diskFull && (
-                  <motion.div
-                    initial={{ opacity: 0, y: -8 }}
-                    animate={{ opacity: 1, y: 0 }}
-                    className="flex gap-3 rounded-xl border border-red-500/30 bg-red-500/10 px-4 py-3 text-sm text-red-300"
-                  >
-                    <AlertCircle size={16} className="flex-shrink-0 mt-0.5" />
-                    <div>
-                      <p className="font-medium">Kein Speicherplatz verfügbar</p>
-                      <p className="text-red-400/80 mt-0.5 text-xs">
-                        {diskStats?.nextExpiryAt
-                          ? `Uploads sind derzeit nicht möglich. Nächste Dateien werden ${formatTimeUntil(diskStats.nextExpiryAt)} automatisch gelöscht und geben Speicher frei.`
-                          : 'Uploads sind derzeit nicht möglich. Bitte wende dich an den Administrator.'}
-                      </p>
-                    </div>
-                  </motion.div>
-                )}
-
                 <UploadZone
                   files={files}
                   onFilesAdded={handleFilesAdded}
@@ -211,7 +261,10 @@ export function HomePage() {
                           <ShieldCheck size={14} className="text-violet-400" />
                           Ende-zu-Ende-Verschlüsselung
                         </p>
-                        <p className="text-xs text-text-muted mt-0.5">AES-256-GCM — Schlüssel nur im Link, nie auf dem Server</p>
+                        <p className="text-xs text-text-muted mt-0.5">
+                          AES-256-GCM — Schlüssel nur im Link, nie auf dem
+                          Server
+                        </p>
                       </div>
                       <Toggle
                         checked={options.encrypted}
@@ -219,13 +272,15 @@ export function HomePage() {
                       />
                     </div>
 
-                    <UploadOptions options={options} onChange={handleOptionChange} />
+                    <UploadOptions
+                      options={options}
+                      onChange={handleOptionChange}
+                    />
 
                     <Button
                       className="w-full"
                       size="lg"
                       icon={<ArrowRight size={18} />}
-                      disabled={diskFull}
                       onClick={handleUpload}
                     >
                       Hochladen & Link erhalten
@@ -236,7 +291,12 @@ export function HomePage() {
             )}
 
             {phase === 'uploading' && (
-              <motion.div key="uploading" initial={{ opacity: 0 }} animate={{ opacity: 1 }} exit={{ opacity: 0 }}>
+              <motion.div
+                key="uploading"
+                initial={{ opacity: 0 }}
+                animate={{ opacity: 1 }}
+                exit={{ opacity: 0 }}
+              >
                 <UploadProgress
                   percent={progress.percent}
                   speed={progress.speed}
@@ -247,7 +307,12 @@ export function HomePage() {
             )}
 
             {phase === 'scanning' && (
-              <motion.div key="scanning" initial={{ opacity: 0 }} animate={{ opacity: 1 }} exit={{ opacity: 0 }}>
+              <motion.div
+                key="scanning"
+                initial={{ opacity: 0 }}
+                animate={{ opacity: 1 }}
+                exit={{ opacity: 0 }}
+              >
                 <VirusScanProgress
                   percent={scanProgress.percent}
                   currentFile={scanProgress.currentFile}
@@ -258,7 +323,12 @@ export function HomePage() {
             )}
 
             {phase === 'blocked' && scanError && (
-              <motion.div key="blocked" initial={{ opacity: 0 }} animate={{ opacity: 1 }} exit={{ opacity: 0 }}>
+              <motion.div
+                key="blocked"
+                initial={{ opacity: 0 }}
+                animate={{ opacity: 1 }}
+                exit={{ opacity: 0 }}
+              >
                 <VirusScanResult
                   type={scanError.type}
                   virus={scanError.virus}
@@ -270,13 +340,19 @@ export function HomePage() {
             )}
 
             {phase === 'success' && result && (
-              <motion.div key="success" initial={{ opacity: 0 }} animate={{ opacity: 1 }} exit={{ opacity: 0 }}>
+              <motion.div
+                key="success"
+                initial={{ opacity: 0 }}
+                animate={{ opacity: 1 }}
+                exit={{ opacity: 0 }}
+              >
                 <SuccessScreen
                   shortId={result.shortId}
                   expiresAt={result.expiresAt}
                   fileCount={result.fileCount}
                   totalSize={result.totalSize}
                   encryptionKey={result.encryptionKey}
+                  encryptionContext={result.encryptionContext}
                   virusScanned={result.virusScanned}
                   onReset={handleReset}
                 />
@@ -297,31 +373,18 @@ export function HomePage() {
               <div className="w-10 h-10 rounded-xl bg-primary/10 text-primary flex items-center justify-center mx-auto mb-3">
                 {f.icon}
               </div>
-              <p className="text-sm font-semibold text-text-primary">{f.title}</p>
+              <p className="text-sm font-semibold text-text-primary">
+                {f.title}
+              </p>
               <p className="text-xs text-text-muted mt-1">{f.desc}</p>
             </Card>
           ))}
         </motion.div>
 
-        {/* Server disk usage */}
         {diskStats && (
-          <motion.div
-            initial={{ opacity: 0 }}
-            animate={{ opacity: 1 }}
-            transition={{ delay: 0.3 }}
-            className="mt-4 flex items-center gap-3 px-1"
-          >
-            <HardDrive size={13} className="text-text-muted flex-shrink-0" />
-            <div className="flex-1 h-1 bg-border rounded-full overflow-hidden">
-              <div
-                className={`h-full rounded-full transition-[width] duration-500 ${
-                  diskStats.pct >= 90 ? 'bg-red-500' : diskStats.pct >= 70 ? 'bg-amber-500' : 'bg-primary'
-                }`}
-                style={{ width: `${diskStats.pct}%` }}
-              />
-            </div>
-            <span className="text-xs text-text-muted tabular-nums">{diskStats.pct}%</span>
-          </motion.div>
+          <p className="mt-4 text-xs text-text-muted">
+            Gespeicherte Transferdaten: {formatBytes(diskStats.used)}
+          </p>
         )}
       </div>
     </div>

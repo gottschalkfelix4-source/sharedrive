@@ -19,7 +19,10 @@ export function scanReadable(
   onProgress?: (scannedBytes: number, phase: ScanPhase) => void
 ): Promise<ScanResult> {
   return new Promise((resolve) => {
-    const socket = net.createConnection({ host: config.clamav.host, port: config.clamav.port })
+    const socket = net.createConnection({
+      host: config.clamav.host,
+      port: config.clamav.port,
+    })
     let responseBuf = ''
     let scanned = 0
     let settled = false
@@ -29,8 +32,8 @@ export function scanReadable(
       settled = true
       source.removeAllListeners('data')
       source.removeAllListeners('end')
-      source.removeAllListeners('error');
-      (source as unknown as { destroy?: () => void }).destroy?.()
+      source.removeAllListeners('error')
+      ;(source as unknown as { destroy?: () => void }).destroy?.()
       socket.destroy()
       resolve(result)
     }
@@ -40,9 +43,15 @@ export function scanReadable(
     })
 
     socket.on('error', (err) => {
-      finish({ clean: false, error: `Virenscanner nicht erreichbar (${err.message})` })
+      finish({
+        clean: false,
+        error: `Virenscanner nicht erreichbar (${err.message})`,
+      })
     })
 
+    source.on('error', (err: Error) =>
+      finish({ clean: false, error: 'Storage stream unavailable' })
+    )
     socket.on('connect', () => {
       socket.write('zINSTREAM\0')
 
@@ -66,10 +75,6 @@ export function scanReadable(
         onProgress?.(scanned, 'analyzing')
         socket.write(Buffer.alloc(4)) // zero-length chunk = EOF
       })
-
-      source.on('error', (err: Error) => {
-        finish({ clean: false, error: err.message })
-      })
     })
 
     socket.on('data', (data) => {
@@ -88,7 +93,10 @@ export function scanReadable(
     })
 
     socket.on('close', () => {
-      finish({ clean: false, error: 'Verbindung zum Virenscanner unterbrochen' })
+      finish({
+        clean: false,
+        error: 'Verbindung zum Virenscanner unterbrochen',
+      })
     })
   })
 }

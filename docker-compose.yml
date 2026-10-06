@@ -1,15 +1,17 @@
 services:
   caddy:
-    image: caddy:alpine
+    image: caddy:2.10.2-alpine@sha256:4c6e91c6ed0e2fa03efd5b44747b625fec79bc9cd06ac5235a779726618e530d
     container_name: sharedrive-caddy
     ports:
-      - "80:80"
-      - "443:443"
-      - "443:443/udp"
+      - "${HTTP_PORT:-80}:80"
+      - "${HTTPS_PORT:-443}:443"
+      - "${HTTPS_PORT:-443}:443/udp"
     volumes:
       - ./Caddyfile:/etc/caddy/Caddyfile
       - caddy_data:/data
       - caddy_config:/config
+    environment:
+      CADDY_TRUSTED_PROXIES: ${CADDY_TRUSTED_PROXIES:-127.0.0.1/32}
     depends_on:
       - nginx
     restart: unless-stopped
@@ -33,24 +35,27 @@ services:
     env_file: .env
     environment:
       NODE_ENV: production
+    mem_limit: 1g
+    cpus: 2
     volumes:
       - ./.env:/app/.env
       - ./Caddyfile:/app/Caddyfile
+      - ./.setup:/app/.setup
     depends_on:
       postgres:
         condition: service_healthy
       redis:
         condition: service_healthy
       minio:
-        condition: service_started
+        condition: service_healthy
       clamav:
-        condition: service_started
+        condition: service_healthy
     restart: unless-stopped
     networks:
       - sharedrive-net
 
   postgres:
-    image: postgres:16-alpine
+    image: postgres:16.10-alpine@sha256:029660641a0cfc575b14f336ba448fb8a75fd595d42e1fa316b9fb4378742297
     container_name: sharedrive-postgres
     env_file: .env
     volumes:
@@ -65,7 +70,8 @@ services:
       - sharedrive-net
 
   redis:
-    image: redis:7-alpine
+    image: redis:7.4.5-alpine@sha256:bb186d083732f669da90be8b0f975a37812b15e913465bb14d845db72a4e3e08
+    command: [redis-server, --appendonly, "yes"]
     container_name: sharedrive-redis
     volumes:
       - redis_data:/data
@@ -79,34 +85,46 @@ services:
       - sharedrive-net
 
   minio:
-    image: minio/minio:latest
+    image: ${MINIO_IMAGE:-sharedrive-minio:local}
+    build:
+      context: .
+      dockerfile: unraid/Dockerfile.minio
     container_name: sharedrive-minio
     command: server /data --console-address ":9001"
     env_file: .env
     volumes:
       - minio_data:/data
-    # Console (port 9001) is intentionally NOT published to the host — it gives
-    # full, unauthenticated-by-default access to every raw object in the bucket,
-    # bypassing all app-level access control and encryption checks entirely.
-    # To access it, tunnel instead of opening the port:
-    #   ssh -L 9001:localhost:9001 user@your-server
-    # then browse http://localhost:9001 locally.
+    # Storage API and console remain private to the Docker network.
+    healthcheck:
+      test: [CMD, curl, -fsS, http://localhost:9000/minio/health/ready]
+      interval: 10s
+      timeout: 5s
+      retries: 30
     restart: unless-stopped
     networks:
       - sharedrive-net
 
   clamav:
-    image: clamav/clamav:stable
+    image: clamav/clamav:1.4.3@sha256:75fb5fd95fcbe1d7e6d240c369c1572b686ee2c95949d1042b5148de8eddebb4
     container_name: sharedrive-clamav
     environment:
       # Raise stream/file limits well above the app's default 5 GB max file size
       CLAMD_CONF_StreamMaxLength: 6144M
       CLAMD_CONF_MaxFileSize: 6144M
       CLAMD_CONF_MaxScanSize: 6144M
+      CLAMD_CONF_AlertExceedsMax: "yes"
       CLAMD_CONF_TCPSocket: 3310
       CLAMD_CONF_TCPAddr: "0.0.0.0"
     volumes:
       - clamav_data:/var/lib/clamav
+    mem_limit: 3g
+    cpus: 2
+    healthcheck:
+      test: [CMD, clamdscan, --ping, "1"]
+      interval: 30s
+      timeout: 10s
+      start_period: 5m
+      retries: 10
     restart: unless-stopped
     networks:
       - sharedrive-net

@@ -9,6 +9,7 @@ export interface User {
 }
 
 export interface FileInfo {
+  encryptionIndex?: number | null
   id: string
   name: string
   relativePath?: string | null
@@ -21,7 +22,10 @@ export interface Transfer {
   title?: string | null
   message?: string | null
   expiresAt: string
-  createdAt: string
+  createdAt?: string
+  encryptionVersion?: number
+  encryptionContext?: string | null
+  encryptedManifest?: string | null
   downloadCount: number
   maxDownloads?: number | null
   notifyEmail?: string | null
@@ -47,7 +51,9 @@ export interface TransferUploadResult {
   fileCount: number
   totalSize: string
   virusScanned: boolean
-  encryptionKey?: string  // base64url AES-256-GCM key, present when encrypted=true
+  encryptionKey?: string // base64url AES-256-GCM key, present when encrypted=true
+  encryptionVersion?: number
+  encryptionContext?: string
 }
 
 export interface AdminStats {

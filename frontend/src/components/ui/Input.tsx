@@ -1,4 +1,4 @@
-import { forwardRef } from 'react'
+import { forwardRef, useId } from 'react'
 import { cn } from '@/lib/utils'
 
 interface InputProps extends React.InputHTMLAttributes<HTMLInputElement> {
@@ -10,10 +10,15 @@ interface InputProps extends React.InputHTMLAttributes<HTMLInputElement> {
 
 export const Input = forwardRef<HTMLInputElement, InputProps>(
   ({ label, error, hint, icon, className, ...props }, ref) => {
+    const generatedId = useId()
+    const id = props.id || generatedId
     return (
       <div className="flex flex-col gap-1.5">
         {label && (
-          <label className="text-sm font-medium text-text-secondary">
+          <label
+            htmlFor={id}
+            className="text-sm font-medium text-text-secondary"
+          >
             {label}
           </label>
         )}
@@ -25,6 +30,9 @@ export const Input = forwardRef<HTMLInputElement, InputProps>(
           )}
           <input
             ref={ref}
+            id={id}
+            aria-invalid={!!error}
+            aria-describedby={error || hint ? `${id}-description` : undefined}
             className={cn(
               'w-full bg-bg-elevated border border-border rounded-xl px-4 py-2.5 text-sm text-text-primary',
               'placeholder:text-text-muted',
@@ -37,15 +45,24 @@ export const Input = forwardRef<HTMLInputElement, InputProps>(
             {...props}
           />
         </div>
-        {hint && !error && <p className="text-xs text-text-muted">{hint}</p>}
-        {error && <p className="text-xs text-red-400">{error}</p>}
+        {hint && !error && (
+          <p id={`${id}-description`} className="text-xs text-text-muted">
+            {hint}
+          </p>
+        )}
+        {error && (
+          <p id={`${id}-description`} className="text-xs text-red-400">
+            {error}
+          </p>
+        )}
       </div>
     )
   }
 )
 Input.displayName = 'Input'
 
-interface TextareaProps extends React.TextareaHTMLAttributes<HTMLTextAreaElement> {
+interface TextareaProps
+  extends React.TextareaHTMLAttributes<HTMLTextAreaElement> {
   label?: string
   error?: string
   hint?: string
@@ -53,11 +70,23 @@ interface TextareaProps extends React.TextareaHTMLAttributes<HTMLTextAreaElement
 
 export const Textarea = forwardRef<HTMLTextAreaElement, TextareaProps>(
   ({ label, error, hint, className, ...props }, ref) => {
+    const generatedId = useId()
+    const id = props.id || generatedId
     return (
       <div className="flex flex-col gap-1.5">
-        {label && <label className="text-sm font-medium text-text-secondary">{label}</label>}
+        {label && (
+          <label
+            htmlFor={id}
+            className="text-sm font-medium text-text-secondary"
+          >
+            {label}
+          </label>
+        )}
         <textarea
           ref={ref}
+          id={id}
+          aria-invalid={!!error}
+          aria-describedby={error || hint ? `${id}-description` : undefined}
           className={cn(
             'w-full bg-bg-elevated border border-border rounded-xl px-4 py-2.5 text-sm text-text-primary',
             'placeholder:text-text-muted resize-none',
@@ -68,8 +97,16 @@ export const Textarea = forwardRef<HTMLTextAreaElement, TextareaProps>(
           )}
           {...props}
         />
-        {hint && !error && <p className="text-xs text-text-muted">{hint}</p>}
-        {error && <p className="text-xs text-red-400">{error}</p>}
+        {hint && !error && (
+          <p id={`${id}-description`} className="text-xs text-text-muted">
+            {hint}
+          </p>
+        )}
+        {error && (
+          <p id={`${id}-description`} className="text-xs text-red-400">
+            {error}
+          </p>
+        )}
       </div>
     )
   }

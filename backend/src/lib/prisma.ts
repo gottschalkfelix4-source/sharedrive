@@ -6,14 +6,21 @@ let _client = new PrismaClient()
 // even after reconnectPrisma() replaces it mid-process.
 export const prisma = new Proxy({} as PrismaClient, {
   get(_t, prop) {
-    return (_client as any)[prop]
+    const value = Reflect.get(_client, prop)
+    return typeof value === 'function' ? value.bind(_client) : value
   },
 })
 
 // Call after ALTER ROLE to swap in a fresh client with the new password.
 export async function reconnectPrisma(databaseUrl: string): Promise<void> {
   const old = _client
-  _client = new PrismaClient({ datasources: { db: { url: databaseUrl } } })
-  await _client.$connect()
+  const next = new PrismaClient({ datasources: { db: { url: databaseUrl } } })
+  try {
+    await next.$connect()
+  } catch (err) {
+    await next.$disconnect()
+    throw err
+  }
+  _client = next
   await old.$disconnect().catch(() => {})
 }

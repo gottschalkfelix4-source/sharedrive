@@ -20,9 +20,12 @@ model User {
   passwordResetExpiry      DateTime?
   tokenVersion             Int       @default(0)
   totpSecret               String?
+  totpPendingSecret        String?
+  totpPendingExpiry        DateTime?
   totpEnabled              Boolean   @default(false)
   totpBackupCodes          String[]  @default([])
   storageUsed              BigInt    @default(0)
+  storageReserved          BigInt    @default(0)
   createdAt                DateTime  @default(now())
   updatedAt                DateTime  @updatedAt
   transfers                Transfer[]
@@ -52,6 +55,9 @@ model Transfer {
   totalSize     BigInt        @default(0)
   encrypted     Boolean       @default(false)
   virusScanned  Boolean       @default(false)
+  encryptionVersion Int       @default(1)
+  encryptionContext String?
+  encryptedManifest String?
   createdAt     DateTime      @default(now())
   updatedAt     DateTime      @updatedAt
   files         File[]
@@ -71,6 +77,8 @@ model File {
   size         BigInt
   mimeType     String
   storageKey   String
+  storedSize   BigInt?
+  encryptionIndex Int?
   createdAt    DateTime @default(now())
 
   @@index([transferId])
@@ -106,4 +114,18 @@ model Log {
   @@index([createdAt(sort: Desc)])
   @@index([level])
   @@index([category])
+}
+
+model Job {
+  id         String   @id
+  kind       String
+  status     String   @default("pending")
+  payload    Json
+  leaseUntil DateTime?
+  leaseOwner String?
+  expiresAt  DateTime
+  createdAt  DateTime @default(now())
+  updatedAt  DateTime @updatedAt
+
+  @@index([kind, status, expiresAt])
 }
